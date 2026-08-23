@@ -1,0 +1,35 @@
+# "Modified PPO" fixed-D run -- an EXAMPLE starting hypothesis, not a
+# finished result. Every field is identical to ppo_fixed_d_standard.yaml
+# EXCEPT epochs_per_refresh (10 -> 30), so that any measured change in the
+# exploitation gap is attributable to that one change alone (per the
+# project's "modify ONE component at a time" rule -- see README step 7).
+#
+# This is testing H4: "the number of optimization epochs is insufficient
+# for PPO to extract what the clipped objective would otherwise allow it
+# to." To test a different hypothesis instead (H3 clip range, H5 entropy,
+# H7 learning rate, etc.), copy this file, change exactly one field back to
+# the standard value plus one new field away from it, and give it a name
+# that says which hypothesis it tests -- e.g. ppo_fixed_d_h3_wide_clip.yaml.
+
+# --- fixed-D training loop shape ---
+n_outer_iterations: 200
+epochs_per_refresh: 30     # <-- CHANGED from 10 (testing H4)
+minibatch_size: 256
+
+# --- PPO objective (unchanged from standard) ---
+clip_eps: 0.2
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+# --- optimization (unchanged from standard) ---
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+# --- initialization (unchanged from standard) ---
+init_from_checkpoint: false
+
+seed: 0

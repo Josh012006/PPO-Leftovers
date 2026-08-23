@@ -1,0 +1,31 @@
+# "Standard PPO" fixed-D run -- ordinary, widely-used PPO hyperparameters,
+# just pointed at a static dataset D via fixed_d_trainer.py's option-(b)
+# training loop instead of live rollouts. This is the baseline against which
+# every "modified PPO" config is compared; the exploitation gap this config
+# produces is J(pi_D*) - J(pi_standard_PPO).
+
+# --- fixed-D training loop shape ---
+n_outer_iterations: 200   # number of pi_old refreshes; cheap since no new
+                            # rollouts are collected, so this can be large
+epochs_per_refresh: 10     # epochs of clipped updates per refresh -- kept at
+                            # a typical real-PPO value on purpose (see README)
+minibatch_size: 256
+
+# --- PPO objective ---
+clip_eps: 0.2
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+# --- optimization ---
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+# --- initialization (see README "open research fork") ---
+init_from_checkpoint: false   # fresh random init: isolates "what can be
+                                # extracted from D alone"
+
+seed: 0

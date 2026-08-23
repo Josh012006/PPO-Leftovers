@@ -1,0 +1,15 @@
+# Tier-1 study environment. `layout_seed` fixes the maze walls/hazards
+# themselves -- keep this identical across the entire pipeline (prior
+# training, dataset collection, pi_D* computation, evaluation) or the
+# policies are literally solving different mazes.
+width: 30
+height: 30
+slip_prob: 0.10             # P(executed action is resampled uniformly at random)
+extra_connection_prob: 0.08 # probability of knocking down an extra wall -> loops/alt paths
+num_hazards: 12
+step_penalty: -0.01
+goal_reward: 1.0
+hazard_reward: -1.0
+max_steps: 200
+gamma: 0.99
+layout_seed: 0

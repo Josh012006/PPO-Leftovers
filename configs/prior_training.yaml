@@ -1,0 +1,20 @@
+# Standard online PPO used ONLY to produce the frozen checkpoint that D is
+# collected from. Training stops as soon as eval success_rate crosses
+# target_success_rate (or total_iterations is reached, whichever first).
+total_iterations: 500
+rollout_steps: 4096   # total env steps collected per iteration, across all n_envs
+n_envs: 8
+gamma: 0.99
+gae_lambda: 0.95
+clip_eps: 0.2
+epochs: 10
+minibatch_size: 256
+lr: 0.0003
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+hidden_sizes: [64, 64]
+target_success_rate: 0.60
+eval_episodes: 100
+eval_every: 10
+seed: 0
