@@ -18,12 +18,14 @@ This project is directly motivated by:
 > Glen Berseth, ["Is Exploration or Optimization the Problem for Deep
 > Reinforcement Learning?"](https://arxiv.org/pdf/2508.01329) (2025)
 
-That paper introduces the **experience optimal policy** and a practical
-sub-optimality estimator built from it, and reports that across many
-environments and both PPO and DQN, the gap between the best experience an
-agent generates and what its learned policy actually achieves is often
-larger than the gap between the learned policy and its own untrained
-starting point — i.e. that much of deep RL's difficulty on hard tasks is an
+That paper introduces the **experience optimal policy** `π̂*` — the best
+policy recoverable from an agent's own collected experience — and defines
+**practical sub-optimality** as the gap between it and the learned policy,
+`V(π̂*(s0)) − V(π_θ(s0))`. It reports that across many
+environments and both PPO and DQN, the experience-optimal value is typically 
+2–3× the learned policy's own value — in the paper's own words, these algorithms 
+"only exploit half of the good experience they generate." — i.e. that much of 
+deep RL's difficulty on hard tasks is an
 *exploitation/optimization* problem, not an *exploration* problem.
 
 This project adapts that core idea into a controlled, single-algorithm
