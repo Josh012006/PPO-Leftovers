@@ -80,8 +80,7 @@ still faces a genuine function-approximation challenge:
   (normalized position, local wall sensors, hazard flag, BFS-based
   normalized distance to goal). PPO never sees the integer state directly —
   it has to generalize across positions rather than memorize a lookup table.
-  This is the "observation layer / ground-truth layer" split described in
-  the design discussion: exactness of `π_D*` is a property of *how it's
+  Exactness of `π_D*` is a property of *how it's
   solved*, never a constraint on what PPO is allowed to see.
 - **Stochasticity** is a simple, closed-form "slip" model: with probability
   `slip_prob`, the executed action is resampled uniformly at random from all
@@ -196,7 +195,7 @@ blindly — it's exposed as `init_from_checkpoint` in `PPOHyperparams`:
   practice (it never resets), but confounds "started already good" with
   "extracted from `D`."
 
-Run both and compare before trusting a single exploitation-gap number.
+Our analyses will include both and compare to have an even larger idea of exploitation-gap .
 
 ### Theoretical caveat: PPO-on-fixed-D is not a proper offline-RL correction
 
