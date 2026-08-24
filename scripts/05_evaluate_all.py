@@ -6,7 +6,6 @@ then print/save the exploitation-gap table.
 Usage:
     python scripts/05_evaluate_all.py \
         --env-config configs/env_maze.yaml \
-        --reference-config configs/reference.yaml \
         --prior-checkpoint results/prior_checkpoint.pt \
         --pi-d-star-empirical results/pi_d_star_empirical.pkl \
         --pi-d-star-true-restricted results/pi_d_star_true_restricted.pkl \
@@ -29,7 +28,7 @@ import torch
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.eval.evaluate import build_gap_report, evaluate_policy, make_neural_act_fn, make_tabular_act_fn
 from ppo_exploitation.ppo.networks import ActorCritic
-from ppo_exploitation.utils.config import MazeEnvConfig, ReferenceConfig
+from ppo_exploitation.utils.config import MazeEnvConfig
 
 
 def load_ppo_checkpoint(path: str) -> ActorCritic:
@@ -43,7 +42,6 @@ def load_ppo_checkpoint(path: str) -> ActorCritic:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-config", default="configs/env_maze.yaml")
-    parser.add_argument("--reference-config", default="configs/reference.yaml")
     parser.add_argument("--prior-checkpoint", default="results/prior_checkpoint.pt")
     parser.add_argument("--pi-d-star-empirical", default="results/pi_d_star_empirical.pkl")
     parser.add_argument("--pi-d-star-true-restricted", default="results/pi_d_star_true_restricted.pkl")
@@ -65,7 +63,6 @@ def main():
     args = parser.parse_args()
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
-    ref_cfg = ReferenceConfig.from_yaml(args.reference_config)
     env = StochasticMazeEnv(
         width=env_cfg.width,
         height=env_cfg.height,
@@ -87,16 +84,21 @@ def main():
         env, make_neural_act_fn(prior_net, deterministic=not args.stochastic_eval), args.n_episodes, args.eval_seed
     )
 
-    # --- both pi_D* variants ---
+    # --- both pi_D* variants. covered_states enables the uncovered-state
+    # frequency diagnostic (see eval/evaluate.py) -- act() itself never
+    # forces termination or applies a penalty at this stage anymore, it
+    # always returns a real, if sometimes uninformed, action. ---
     with open(args.pi_d_star_empirical, "rb") as f:
         ref_empirical = pickle.load(f)
     with open(args.pi_d_star_true_restricted, "rb") as f:
         ref_true = pickle.load(f)
     results["pi_D*_empirical"] = evaluate_policy(
-        env, make_tabular_act_fn(ref_empirical), args.n_episodes, args.eval_seed, unseen_penalty=ref_cfg.unseen_penalty
+        env, make_tabular_act_fn(ref_empirical), args.n_episodes, args.eval_seed,
+        covered_states=ref_empirical.covered_states,
     )
     results["pi_D*_true_restricted"] = evaluate_policy(
-        env, make_tabular_act_fn(ref_true), args.n_episodes, args.eval_seed, unseen_penalty=ref_cfg.unseen_penalty
+        env, make_tabular_act_fn(ref_true), args.n_episodes, args.eval_seed,
+        covered_states=ref_true.covered_states,
     )
 
     # --- fixed-D PPO checkpoints (standard, modified, any ablations) ---

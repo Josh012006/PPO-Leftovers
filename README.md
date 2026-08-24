@@ -124,18 +124,57 @@ gap" is really just sampling noise in the definition of the ceiling itself,
 versus a genuine PPO limitation.
 
 **Unvisited `(s,a)` convention.** Any `(state, action)` pair never observed
-in `D` is routed, in both DP solves, to a dedicated absorbing state with a
-large fixed negative reward (`unseen_penalty`, default `-50`, configured in
-`configs/reference.yaml`). This must be set more negative than any
-achievable real return so that greedy value iteration always prefers a
-*visited* action at a state whenever one exists. The same convention is
-applied at **live-rollout evaluation time**: if a tabular `π_D*` policy ever
-lands on a state with literally zero visited actions in `D` (`.act()`
-returns `None`), the evaluator (`eval/evaluate.py`) forcibly ends the
-episode there and applies `unseen_penalty`, rather than letting the policy
-take an arbitrary, evidence-free action in real dynamics. This is what
-keeps `π_D*`'s live score from ever being silently inflated by undefined
-behavior on states `D` never covered.
+in `D` is routed, **during the DP solve only**, to a dedicated absorbing
+state with a large fixed negative reward (`unseen_penalty`, default `-50`,
+configured in `configs/reference.yaml`). This must be set more negative
+than any achievable real return so that greedy value iteration always
+prefers a *visited* action at a state whenever one exists. `D` supplies
+value iteration with a transition and reward **model** — how the
+environment behaves — never a default **behavior** to fall back on: the
+Bellman equations are solved from that model alone, with no notion of
+"what the data-collecting policy `π_β` would have done." So there is no
+`π_β`-shaped default to borrow either, only the arbitrary (but fixed, and
+reproducible) tie-break value iteration itself produces when every action
+at a state is equally unvisited-and-penalized.
+
+**This penalty is deliberately *not* reapplied at live-rollout evaluation
+time.** Reapplying the same logic would mean that if a tabular
+`π_D*` policy landed on a state with zero visited actions in `D`, the
+evaluator forcibly ended the episode there and charged `unseen_penalty` a
+second time. That would be a mistake, for a reason worth stating
+plainly: a neural policy has no notion of an "unseen state" at all. Every
+observation gets a forward pass and an action, informed by whatever the
+network generalizes from nearby states — there is no special branch, no
+early termination, in training or in production. `π_D*`, being a lookup
+table, structurally cannot generalize like that, and that's *intentional*
+— crediting it with neural-style generalization would stop it from
+measuring "the best extractable from `D` alone" and start measuring "the
+best extractable from `D` plus borrowed function-approximation capacity."
+But forcibly ending the episode doesn't just withhold that credit; it
+manufactures a penalty the real environment would never actually impose,
+silently deflating `J(π_D*)` by an amount that has nothing to do with what
+`D` supports. (Querying `π_β` directly for a fallback action was
+considered and rejected for the same underlying reason: it would smuggle
+`π_β`'s own neural generalization back into a ceiling that's supposed to
+depend on `D` alone.)
+
+**What actually happens:** `ReferenceSolution.act(state)` always
+returns a real action — value iteration's own default at that state, an
+uninformed tie-break when the state has zero coverage, the genuinely
+optimal action when it doesn't — and the live evaluator just lets the real
+environment continue normally, exactly as it would for any other state.
+What's tracked instead is *how often this happens*: `evaluate_policy`
+accepts an optional `covered_states` set and reports
+`uncovered_state_step_rate` / `uncovered_state_episode_rate` — the
+fraction of steps/episodes where the policy acted on a state `D` never
+informed it about. `scripts/05_evaluate_all.py` reports these alongside
+every other column for both `π_D*` variants (`NaN` for neural policies,
+which have no such notion). Read `J(π_D*)` together with this diagnostic:
+a low uncovered-state rate means the reported ceiling is trustworthy more
+or less as-is; a high one is a flag that `D`'s coverage, not `π_D*`'s
+solve, is the limiting factor for that particular run — which is itself
+useful information, since it points at the exploration/data term of the
+decomposition rather than the exploitation term this project studies.
 
 **Evaluation is always live-rollout, for every policy.** The DP solve gives
 `π_D*` a closed-form `V(s0)` too, but that's a *theoretical* value under the
@@ -440,7 +479,6 @@ python scripts/04_train_fixed_d_ppo.py \
 # 5. Evaluate everything under the identical live-rollout protocol
 python scripts/05_evaluate_all.py \
     --env-config configs/env_maze.yaml \
-    --reference-config configs/reference.yaml \
     --prior-checkpoint results/prior_checkpoint.pt \
     --pi-d-star-empirical results/pi_d_star_empirical.pkl \
     --pi-d-star-true-restricted results/pi_d_star_true_restricted.pkl \

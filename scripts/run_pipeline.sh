@@ -54,7 +54,6 @@ python scripts/04_train_fixed_d_ppo.py \
 echo "=== [5/5] Evaluating everything under the same live-rollout protocol ==="
 python scripts/05_evaluate_all.py \
     --env-config "$ENV_CFG" \
-    --reference-config "$REF_CFG" \
     --prior-checkpoint results/prior_checkpoint.pt \
     --pi-d-star-empirical results/pi_d_star_empirical.pkl \
     --pi-d-star-true-restricted results/pi_d_star_true_restricted.pkl \

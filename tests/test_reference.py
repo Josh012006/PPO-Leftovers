@@ -69,9 +69,20 @@ def test_unseen_action_is_dominated_when_alternative_exists():
     assert abs(ref.V[0] - (-0.05)) < 1e-6
 
 
-def test_act_returns_none_for_fully_uncovered_state():
+def test_act_always_returns_a_real_action_even_when_fully_uncovered():
+    """State 2 never appears anywhere in D (zero coverage: not even one of
+    its 4 actions was visited). act() must still return a real, valid
+    action -- value iteration's arbitrary tie-break among the four
+    identically-penalized options -- never None. Whether that default was
+    actually informed by D is a separate question, answered by checking
+    `covered_states`, not by act()'s return value."""
     tr = _traj(states=[0], actions=[1], rewards=[1.0], next_states=[1], terminated_final=True)
     dataset = FixedDataset(trajectories=[tr], n_states=3, n_actions=2, obs_dim=1)  # state 2 never appears at all
     ref = compute_pi_d_star_empirical(dataset, gamma=0.9, unseen_penalty=-50.0)
-    assert ref.act(2) is None
-    assert ref.act(0) == 1
+
+    action = ref.act(2)
+    assert action is not None
+    assert action in (0, 1)  # a valid action index, even though uninformed
+    assert 2 not in ref.covered_states  # this is how callers detect "uninformed", not act()'s return value
+
+    assert ref.act(0) == 1  # a genuinely covered state still gets the informed, VI-optimal action

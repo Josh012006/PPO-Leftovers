@@ -148,8 +148,8 @@ def test_full_pipeline_produces_well_formed_gap_report(prior_agent, dataset):
     """The end-to-end check: prior, pi_D*, and a fixed-D PPO run, evaluated
     through the SAME evaluate_policy/build_gap_report code the real Tier-1
     study uses, must produce a well-formed table -- finite returns, success
-    rates in [0, 1], no crashes on the uncovered-state-terminates-with-
-    penalty convention for the tabular policy."""
+    rates in [0, 1], and (for the tabular policy) a well-formed coverage
+    diagnostic rather than a forced-termination penalty."""
     env = _make_env()
     ref = compute_pi_d_star_empirical(dataset, gamma=GAMMA, unseen_penalty=UNSEEN_PENALTY)
 
@@ -166,13 +166,16 @@ def test_full_pipeline_produces_well_formed_gap_report(prior_agent, dataset):
     results = {
         "prior": evaluate_policy(env, make_neural_act_fn(prior_agent.net, deterministic=True), 100, seed=42),
         "pi_D*_empirical": evaluate_policy(
-            env, make_tabular_act_fn(ref), 100, seed=42, unseen_penalty=UNSEEN_PENALTY
+            env, make_tabular_act_fn(ref), 100, seed=42, covered_states=ref.covered_states
         ),
         "fixed_d_ppo": evaluate_policy(env, make_neural_act_fn(trainer.net, deterministic=True), 100, seed=42),
     }
     for name, res in results.items():
         assert np.isfinite(res["mean_return"]), f"{name} produced a non-finite mean_return"
         assert 0.0 <= res["success_rate"] <= 1.0, f"{name} produced an out-of-range success_rate"
+    assert 0.0 <= results["pi_D*_empirical"]["uncovered_state_step_rate"] <= 1.0
+    assert 0.0 <= results["pi_D*_empirical"]["uncovered_state_episode_rate"] <= 1.0
+    assert "uncovered_state_step_rate" not in results["prior"]  # neural policies don't get this diagnostic
 
     report = build_gap_report(results, reference_key="pi_D*_empirical")
     assert "gap_vs_reference_return" in report.columns
