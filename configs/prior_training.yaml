@@ -17,7 +17,7 @@ entropy_coef: 0.01
 value_coef: 0.5
 max_grad_norm: 0.5
 hidden_sizes: [64, 64]
-target_success_rate: 0.60
+target_success_rate: 0.35
 success_streak_length: 5   # consecutive eval checks required at/above target
 eval_episodes: 500         # note: raising this meaningfully slows each eval check
 eval_every: 5

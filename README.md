@@ -438,7 +438,7 @@ bash scripts/run_pipeline.sh
 or step by step:
 
 ```bash
-# 1. Train the online PPO prior to ~60% success rate (live environment)
+# 1. Train the online PPO prior to ~35% success rate (live environment)
 python scripts/01_train_prior.py \
     --env-config configs/env_maze.yaml \
     --prior-config configs/prior_training.yaml \
