@@ -448,7 +448,7 @@ python scripts/01_train_prior.py \
 python scripts/02_collect_dataset.py \
     --env-config configs/env_maze.yaml \
     --checkpoint results/prior_checkpoint.pt \
-    --n-episodes 2000 --seed 1 \
+    --n-episodes 4000 --seed 1 \
     --out results/dataset_D.pkl
 
 # 3. Solve pi_D* exactly (both empirical and true-restricted definitions)

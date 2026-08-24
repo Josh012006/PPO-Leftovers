@@ -24,7 +24,7 @@ echo "=== [2/5] Collecting fixed dataset D from the frozen prior ==="
 python scripts/02_collect_dataset.py \
     --env-config "$ENV_CFG" \
     --checkpoint results/prior_checkpoint.pt \
-    --n-episodes 2000 \
+    --n-episodes 4000 \
     --seed 1 \
     --out results/dataset_D.pkl
 

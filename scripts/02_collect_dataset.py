@@ -6,7 +6,7 @@ Usage:
     python scripts/02_collect_dataset.py \
         --env-config configs/env_maze.yaml \
         --checkpoint results/prior_checkpoint.pt \
-        --n-episodes 2000 \
+        --n-episodes 4000 \
         --seed 1 \
         --out results/dataset_D.pkl
 """
@@ -31,7 +31,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-config", default="configs/env_maze.yaml")
     parser.add_argument("--checkpoint", default="results/prior_checkpoint.pt")
-    parser.add_argument("--n-episodes", type=int, default=2000)
+    parser.add_argument("--n-episodes", type=int, default=4000)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
         "--deterministic",
