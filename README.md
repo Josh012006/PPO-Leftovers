@@ -287,16 +287,6 @@ pytest tests/ -v           # everything: Tier-1 unit tests + Tier-0
 pytest tests/tier0/ -v     # just the cross-environment validation
 ```
 
-## Continuous integration
-
-`.github/workflows/tests.yml` runs the full test suite (`pytest tests/ -v`
-— both tiers) on every push and every pull request. It installs a CPU-only
-PyTorch wheel explicitly (no GPU on the runner, and the default PyPI wheel
-would otherwise pull a much larger CUDA build) before the rest of
-`requirements.txt`. It does **not** run `scripts/run_pipeline.sh` — the
-real 30×30 research pipeline is a long, compute-heavy experiment meant to
-be run and watched locally, not a pass/fail CI gate.
-
 ## Project structure
 
 ```
@@ -354,7 +344,7 @@ pip install -e .          # makes `ppo_exploitation` importable everywhere
 pytest tests/ -v
 ```
 
-See "Two kinds of tests, kept deliberately separate" above.
+<!-- See "Two kinds of tests, kept deliberately separate" above.
 `tests/test_reference.py` is the one worth reading closely if you want to
 trust the ceiling numbers: it hand-derives the closed-form fixed point of a
 tiny stochastic self-loop MDP (`V(0) = 0.45/0.55` for a specific
@@ -362,7 +352,7 @@ reward/gamma setup) and checks the value-iteration solver matches it to
 `1e-4`. `tests/tier0/` is the one worth running first if you want to trust
 the *pipeline as a whole* before spending time reading through the maze-
 specific code — it validates the same D → π_D* → fixed-D-PPO → evaluate
-chain against an environment neither of us built.
+chain against an environment neither of us built. -->
 
 ## Running the full pipeline
 
@@ -445,11 +435,10 @@ design is that every variant sees byte-identical experience.
   varies only its own internals.
 - **A principled offline-RL solution.** The fixed-D trainer here is PPO
   running on static data via its native (and, per the caveat above,
-  imperfect) update rule — not a Conservative Q-Learning / IQL / decision-
-  transformer-style offline method. If you want a "how good could a
-  *properly designed* offline method do on this same D" comparison, that's
-  a natural and interesting extension, but it's a different codebase, not
-  a config change to this one.
+  imperfect) update rule — not a Conservative Q-Learning / decision-
+  transformer-style offline method. Answering the question "how good could a
+  *properly designed* offline method do on this same D", could be a natural and 
+  interesting extension of this codebase.
 - **Wall-clock/sample-efficiency claims.** All comparisons here are about
   final exploitation quality given a fixed `D`, not about how many outer
   iterations or how much compute each variant needed to get there (though
