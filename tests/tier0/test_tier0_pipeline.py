@@ -129,18 +129,17 @@ def test_empirical_and_true_restricted_agree_reasonably(dataset):
     assert abs(ref_empirical.V[start_state] - ref_true.V[start_state]) < 0.5
 
 
-def test_fixed_d_ppo_trains_without_error(dataset):
-    cfg = PPOHyperparams(
-        n_outer_iterations=5,
-        epochs_per_refresh=3,
-        minibatch_size=128,
-        hidden_sizes=(32, 32),
-        init_from_checkpoint=False,
-        seed=0,
+def test_fixed_d_ppo_trains_without_error(dataset, prior_agent):
+    cfg = PPOHyperparams(epochs=5, minibatch_size=128, hidden_sizes=(32, 32), seed=0)
+    trainer = FixedDPPOTrainer(
+        dataset,
+        obs_dim=dataset.obs_dim,
+        n_actions=dataset.n_actions,
+        cfg=cfg,
+        prior_state_dict=prior_agent.net.state_dict(),
     )
-    trainer = FixedDPPOTrainer(dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg)
     history = trainer.train(verbose=False)
-    assert len(history) == cfg.n_outer_iterations
+    assert len(history) == cfg.epochs
     assert all(np.isfinite(row["policy_loss"]) for row in history)
     assert all(np.isfinite(row["value_loss"]) for row in history)
 
@@ -154,15 +153,14 @@ def test_full_pipeline_produces_well_formed_gap_report(prior_agent, dataset):
     env = _make_env()
     ref = compute_pi_d_star_empirical(dataset, gamma=GAMMA, unseen_penalty=UNSEEN_PENALTY)
 
-    cfg = PPOHyperparams(
-        n_outer_iterations=5,
-        epochs_per_refresh=3,
-        minibatch_size=128,
-        hidden_sizes=(32, 32),
-        init_from_checkpoint=False,
-        seed=0,
+    cfg = PPOHyperparams(epochs=5, minibatch_size=128, hidden_sizes=(32, 32), seed=0)
+    trainer = FixedDPPOTrainer(
+        dataset,
+        obs_dim=dataset.obs_dim,
+        n_actions=dataset.n_actions,
+        cfg=cfg,
+        prior_state_dict=prior_agent.net.state_dict(),
     )
-    trainer = FixedDPPOTrainer(dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg)
     trainer.train(verbose=False)
 
     results = {

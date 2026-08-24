@@ -40,12 +40,14 @@ echo "=== [4/5] Training standard PPO and modified PPO on D (identical D) ==="
 python scripts/04_train_fixed_d_ppo.py \
     --dataset results/dataset_D.pkl \
     --ppo-config "$STANDARD_CFG" \
+    --prior-checkpoint results/prior_checkpoint.pt \
     --out results/ppo_standard_on_D.pt \
     --history-out results/ppo_standard_on_D_history.csv
 
 python scripts/04_train_fixed_d_ppo.py \
     --dataset results/dataset_D.pkl \
     --ppo-config "$MODIFIED_CFG" \
+    --prior-checkpoint results/prior_checkpoint.pt \
     --out results/ppo_modified_on_D.pt \
     --history-out results/ppo_modified_on_D_history.csv
 

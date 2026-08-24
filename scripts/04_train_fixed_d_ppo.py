@@ -3,6 +3,11 @@ Pass --ppo-config configs/ppo_fixed_d_standard.yaml for the baseline run, or
 any other ppo_fixed_d_*.yaml for a modified/ablation run. This script's code
 path never changes between the two; only the YAML does.
 
+--prior-checkpoint is now always required (not conditional on any config
+flag): theta always starts at pi_beta's weights, and pi_old is pi_beta for
+the entire run -- see fixed_d_trainer.py and README, "What 'fixed-D
+training' means for PPO, operationally".
+
 Usage:
     python scripts/04_train_fixed_d_ppo.py \
         --dataset results/dataset_D.pkl \
@@ -34,8 +39,9 @@ def main():
     parser.add_argument("--ppo-config", required=True)
     parser.add_argument(
         "--prior-checkpoint",
-        default=None,
-        help="Required only if the config's init_from_checkpoint=true.",
+        required=True,
+        help="The checkpoint that generated D (pi_beta). theta starts here and pi_old stays here "
+        "for the whole run -- see README, 'What fixed-D training means for PPO, operationally'.",
     )
     parser.add_argument("--out", required=True)
     parser.add_argument("--history-out", default=None)
@@ -49,18 +55,16 @@ def main():
         f"(this run must be trained on the SAME D as every other comparison run)."
     )
 
-    init_state_dict = None
-    if cfg.init_from_checkpoint:
-        if args.prior_checkpoint is None:
-            raise ValueError("Config has init_from_checkpoint=true; pass --prior-checkpoint.")
-        ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
-        init_state_dict = ckpt["state_dict"]
-        print(f"Initializing from prior checkpoint (final eval: {ckpt['final_eval']})")
-    else:
-        print("Initializing from a fresh random network (init_from_checkpoint=false).")
+    ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
+    prior_state_dict = ckpt["state_dict"]
+    print(f"theta and pi_old both start from the prior checkpoint (final eval: {ckpt['final_eval']})")
 
     trainer = FixedDPPOTrainer(
-        dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg, init_state_dict=init_state_dict
+        dataset,
+        obs_dim=dataset.obs_dim,
+        n_actions=dataset.n_actions,
+        cfg=cfg,
+        prior_state_dict=prior_state_dict,
     )
     history = trainer.train(verbose=True)
 
@@ -74,6 +78,7 @@ def main():
             "hidden_sizes": cfg.hidden_sizes,
             "ppo_config_path": args.ppo_config,
             "dataset_path": args.dataset,
+            "prior_checkpoint_path": args.prior_checkpoint,
         },
         out_path,
     )
