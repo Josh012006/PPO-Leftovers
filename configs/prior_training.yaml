@@ -1,6 +1,9 @@
 # Standard online PPO used ONLY to produce the frozen checkpoint that D is
-# collected from. Training stops as soon as eval success_rate crosses
-# target_success_rate (or total_iterations is reached, whichever first).
+# collected from. Training stops once eval success_rate >= target_success_rate
+# is maintained for `success_streak_length` consecutive eval checks (not on
+# the first crossing -- a single lucky eval batch isn't evidence of a
+# stable policy), or total_iterations is reached, whichever first. The
+# checkpoint actually saved is the EARLIEST one in that streak.
 total_iterations: 500
 rollout_steps: 4096   # total env steps collected per iteration, across all n_envs
 n_envs: 8
@@ -15,6 +18,7 @@ value_coef: 0.5
 max_grad_norm: 0.5
 hidden_sizes: [64, 64]
 target_success_rate: 0.60
-eval_episodes: 100
-eval_every: 10
+success_streak_length: 5   # consecutive eval checks required at/above target
+eval_episodes: 500         # note: raising this meaningfully slows each eval check
+eval_every: 5
 seed: 0
