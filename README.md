@@ -451,6 +451,25 @@ protocol for every policy):
   the exploitation gap this project set out to study, and at this prior
   strength it is large enough to be worth investigating.
 
+**A note on eval seeds, relevant for everything that follows below**: the
+reference lines and epoch-0 values in the next subsections
+(`π_β ≈ 0.348`, `π_D* ≈ 0.992`) differ from the baseline table above
+(`π_β = 0.310`, `π_D* = 0.982`) — this is deliberate, not an
+inconsistency.
+What's frozen across this whole project is the *artifacts* (`π_β`'s
+weights, `D`'s contents, `π_D*`'s solved policy) — never regenerated.
+What's reported for any given plot is always evaluated fresh, under
+whatever eval seed that specific analysis uses, and every point *within*
+one plot must share the same seed or the curve mixes incomparable
+samples. `scripts/analyze_epochs.py` uses `eval_seed=24680` throughout
+(see script docstring) rather than importing numbers computed under
+script 05's `seed=999`, precisely to keep every point in a given figure
+internally consistent. The ~2–4 percentage point gap between the two
+seeds' estimates of the same frozen `π_β`/`π_D*` is itself expected
+sampling variance (`stderr≈2.1pp` each, well under 2 standard errors
+apart) — see "Baseline run" above for the same observation made the first
+time it appeared.
+
 
 ### Epoch-count ceiling analysis (H4, clip_eps=0.2)
 
@@ -575,9 +594,6 @@ here points in a different direction from the success_rate/return
 evidence — if anything it sharpens the "`0.4` drifts, `0.3` doesn't"
 reading.
 
-
-
-
 ### Next steps
 
 Since neither epochs nor `clip_eps` alone closes the gap to `π_D*`,
@@ -585,6 +601,21 @@ and the oscillation itself (not just its amplitude) persists across every
 `clip_eps` tested, H5 (`entropy_coef`) — the one native PPO lever most
 directly implicated by the entropy curves above — is the natural next
 single-variable test on this same frozen `D`/`π_β`.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ## Project structure
