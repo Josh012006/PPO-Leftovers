@@ -472,6 +472,136 @@ protocol for every policy):
   standard.
 
 
+### Epoch-count ceiling analysis (H4, clip_eps=0.2)
+
+The 10-vs-30-epoch null result above only rules out a small range. To test
+epochs on its own terms, `scripts/analyze_epochs.py` trains a single
+300-epoch run (30–100× the conventional range — Schulman et al. 2017 use
+K=3 for Atari-style discrete-action environments, K=10 for MuJoCo) on the
+same frozen `D`/`π_β`, checkpointing live success_rate/mean_return every 5
+epochs against 500 fixed held-out episodes never touched by training. At
+`clip_eps=0.2`, the result is not a smooth plateau: from epoch ~35 onward,
+the deterministic policy repeatedly alternates between two essentially
+fixed configurations — `success_rate≈0.704` and `success_rate≈0.914` —
+recurring bit-for-bit identically many times over the full 300 epochs
+(the 0.914 policy alone recurs at 11 of 61 checkpoints, last seen at epoch
+285), never settling on one or exceeding the higher of the two.
+`clip_frac` climbs slowly and monotonically the entire run (0.0 → 0.266),
+nowhere near saturation, so the clip mechanism itself still has headroom —
+it is not obviously the wall. `entropy` falls over the first ~10 epochs,
+stays flat until ~epoch 130, then climbs steadily back up through epoch
+300, well after the oscillation had already begun.
+
+This means epochs alone is a real but partial factor: more epochs clearly
+help early on (0 → ~35), but past that point the fixed-D optimization
+under `clip_eps=0.2` is not behaving like a well-behaved (concave-like)
+climb toward a single optimum — it is cycling between at least two
+attractors. A direct consequence worth taking seriously: since the
+trajectory is non-monotonic, a *shorter* run (10 epochs, the standard
+range) could just as easily land on an intermediate epoch that happens to
+sit in the worse of the two regimes as the better one — the run never
+"locks in" progress, so a fixed epoch count chosen a priori has no
+guarantee of landing on the best policy the run ever produced, even if a
+better one appeared earlier in training. This is a genuinely open question
+about how the update mechanism could be made to preserve its own best
+intermediate result, not just its final one — see "Further analyses"
+below.
+
+<table>
+<tr>
+<td width="50%"><img src="results/analysis/success_return_clip_0_2.svg" width="100%"><br><em>success_rate &amp; mean_return vs. epoch, clip_eps=0.2. Dashed/dotted/dash-dot lines mark the prior, the exact π_D* ceiling, and this run's best observed success_rate.</em></td>
+<td width="50%"><img src="results/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2. clip_frac never approaches saturation; entropy falls then climbs again well after the oscillation begins.</em></td>
+</tr>
+</table>
+
+### Clip range sweep (H3, clip_eps ∈ {0.1, 0.2, 0.3, 0.4})
+
+Since epochs alone doesn't explain the ceiling, the same 300-epoch sweep
+was re-run at `clip_eps=0.1`, `0.3`, and `0.4` (in addition to `0.2`
+above), everything else identical, to see how much of the ceiling
+`clip_eps` itself is responsible for:
+
+<table>
+<tr>
+<td width="50%"><img src="results/analysis/success_return_clip_0_1.svg" width="100%"><br><em>clip_eps=0.1 — best observed: 0.674 (epoch 15), mean over the run: 0.376</em></td>
+<td width="50%"><img src="results/analysis/success_return_clip_0_2.svg" width="100%"><br><em>clip_eps=0.2 — best observed: 0.914 (epoch 35), mean over the run: 0.735</em></td>
+</tr>
+<tr>
+<td width="50%"><img src="results/analysis/success_return_clip_0_3.svg" width="100%"><br><em>clip_eps=0.3 — best observed: 0.950 (epoch 190), mean over the run: 0.881</em></td>
+<td width="50%"><img src="results/analysis/success_return_clip_0_4.svg" width="100%"><br><em>clip_eps=0.4 — best observed: 0.948 (epoch 40), mean over the run: 0.753</em></td>
+</tr>
+</table>
+
+The oscillation between (at least) two recurring policies persists at
+every clip_eps value tested — this is not specific to `0.2`. But the
+*range* of that oscillation, and the best point it ever reaches, both
+depend heavily on `clip_eps`:
+
+- **Tighter (`0.1`) clearly limits the ceiling.** The best observed
+  success_rate drops to 0.674 — well below every other setting, reached
+  only once (epoch 15) — and the run spends nearly all of its time
+  hovering near the prior (0.348; mean over the whole run: 0.376), with
+  only three brief, narrow spikes escaping it. A trust region this tight
+  does not give the policy enough room to move toward what `D` actually
+  supports.
+- **Looser (`0.4`) does not clearly help, and shows real instability.**
+  Its best observed value (0.948) is close to `0.3`'s, but it is hit only
+  **once**, at epoch 40, and never approached again for the remaining 260
+  epochs — the run instead spends much of that time swinging as low as
+  ~0.50–0.54 repeatedly (mean over the run: 0.753, well below `0.3`'s
+  0.881). A wider trust region lets `θ` move further per epoch, but that
+  extra freedom reads as drifting further into an imperfect fit of `D`'s
+  finite, noisy sample rather than toward a better policy — consistent
+  with overfitting to `D` rather than extracting more from it.
+- **`0.3` is the best-behaved setting tested.** Highest best-observed
+  success_rate (0.950, closest of any run to the 0.992 ceiling) *and*
+  highest mean (0.881) — unlike `0.4` it keeps returning to its best
+  region (6 of 61 checkpoints within 0.005 of its max, last at epoch 275)
+  rather than spiking once and drifting away.
+
+The practical reading: `clip_eps` is a real, first-order lever on how much
+of `D` this mechanism can extract — worth a properly informed choice
+rather than defaulting to the conventional `0.2`. It also suggests
+scheduling `clip_eps` over the course of training (analogous to
+learning-rate schedules) might be worth exploring, rather than treating it
+as a single fixed value for an entire window — added to "Further
+analyses" below.
+
+<table>
+<tr>
+<td width="50%"><img src="results/analysis/clip_entropy_clip_0_1.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.1</em></td>
+<td width="50%"><img src="results/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2</em></td>
+</tr>
+<tr>
+<td width="50%"><img src="results/analysis/clip_entropy_clip_0_3.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.3</em></td>
+<td width="50%"><img src="results/analysis/clip_entropy_clip_0_4.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.4</em></td>
+</tr>
+</table>
+
+These diagnostics mostly complement the success_rate story rather than
+contradicting it. `clip_frac` is not directly comparable in absolute terms
+across different `clip_eps` values (a narrower band is mechanically easier
+to exceed, so a given amount of underlying policy drift produces a higher
+`clip_frac` at `0.1` than the same drift would at `0.4` — the numbers
+answer "how often was the band hit," not "how far did the policy move").
+What is comparable is the *shape*: every setting shows the same
+monotonically-climbing `clip_frac` and the same fall-then-rise `entropy`
+pattern, and `0.4`'s `entropy` finishes lower (~0.41) than the other three
+(~0.44–0.46) while its `clip_frac` plateaus earlier and at a lower level —
+consistent with the wider band clipping less per step, letting `θ` settle
+into a narrower, more confident (but, per the success_rate plot, less
+reliable) policy rather than continuing to explore alternatives. Nothing
+here points in a different direction from the success_rate/return
+evidence — if anything it sharpens the "`0.4` drifts, `0.3` doesn't"
+reading.
+
+Next: since neither epochs nor `clip_eps` alone closes the gap to `π_D*`,
+and the oscillation itself (not just its amplitude) persists across every
+`clip_eps` tested, H5 (`entropy_coef`) — the one native PPO lever most
+directly implicated by the entropy curves above — is the natural next
+single-variable test on this same frozen `D`/`π_β`.
+
+
 ## Project structure
 
 ```
@@ -686,3 +816,23 @@ this is implemented yet.
 - **A properly designed offline-RL baseline**, as noted above — a different
   question from "what does PPO's own update rule extract," but a natural
   point of comparison once that number is established.
+- **Preserving the best intermediate policy during a training window.**
+  The epoch-count analysis (see "Results analysis") shows fixed-D
+  optimization can be non-monotonic within a single window — a better
+  policy can appear at an intermediate epoch and later be lost to
+  continued training, not just plateau. A fixed epoch count chosen in
+  advance has no mechanism to recover that best intermediate point. Worth
+  exploring: tracking the best-observed checkpoint against a held-out
+  signal during training itself (analogous to early stopping) — carefully,
+  since using held-out performance to pick a checkpoint mid-training is
+  itself a form of selection that would need the same scrutiny already
+  applied elsewhere in this project (see the prior-checkpoint confirmation
+  mechanism in `scripts/01_train_prior.py`).
+- **Scheduling `clip_eps` over training**, analogous to learning-rate
+  schedules, rather than treating it as a single fixed value for an
+  entire window. The clip_eps sweep (see "Results analysis") shows the
+  ceiling is sensitive to this value and that looser settings trade a
+  higher ceiling for more instability — a schedule (e.g. loosening early,
+  tightening late) might capture the reach of a wide clip without its
+  instability. Not known whether this is already standard practice
+  elsewhere; worth checking before implementing.
