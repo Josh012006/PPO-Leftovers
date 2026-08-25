@@ -76,24 +76,49 @@ def test_evaluate_policy_reports_no_coverage_diagnostic_without_covered_states()
     assert "uncovered_state_episode_rate" not in result
 
 
+def test_success_rate_stderr_matches_bernoulli_formula():
+    """SE(p_hat) = sqrt(p_hat * (1 - p_hat) / n) for a Bernoulli proportion
+    -- documented here as an explicit, checkable claim rather than left
+    implicit in eval/evaluate.py's implementation."""
+    env = StochasticMazeEnv(width=6, height=6, slip_prob=0.0, num_hazards=1, max_steps=30, layout_seed=0)
+
+    def always_action_0(obs, state):
+        return 0
+
+    result = evaluate_policy(env, always_action_0, n_episodes=200, seed=0)
+    p = result["success_rate"]
+    n = result["n_episodes"]
+    expected_stderr = (p * (1 - p) / n) ** 0.5
+    assert np.isclose(result["success_rate_stderr"], expected_stderr, atol=1e-12)
+
+
 def test_build_gap_report_includes_coverage_columns_only_when_present():
     results_with = {
         "pi_D*_empirical": {
-            "mean_return": 1.0, "stderr_return": 0.1, "success_rate": 1.0, "mean_length": 10.0,
-            "uncovered_state_step_rate": 0.2, "uncovered_state_episode_rate": 0.3,
+            "mean_return": 1.0, "stderr_return": 0.1, "success_rate": 1.0, "success_rate_stderr": 0.0,
+            "mean_length": 10.0, "uncovered_state_step_rate": 0.2, "uncovered_state_episode_rate": 0.3,
         },
         "ppo": {
-            "mean_return": 0.8, "stderr_return": 0.1, "success_rate": 0.8, "mean_length": 12.0,
+            "mean_return": 0.8, "stderr_return": 0.1, "success_rate": 0.8, "success_rate_stderr": 0.02,
+            "mean_length": 12.0,
         },
     }
     report = build_gap_report(results_with, reference_key="pi_D*_empirical")
     assert "uncovered_state_step_rate" in report.columns
+    assert "success_rate_stderr" in report.columns
     assert report.loc["pi_D*_empirical", "uncovered_state_step_rate"] == 0.2
     assert report.loc["ppo", "uncovered_state_step_rate"] is None or np.isnan(report.loc["ppo", "uncovered_state_step_rate"])
 
     results_without = {
-        "pi_D*_empirical": {"mean_return": 1.0, "stderr_return": 0.1, "success_rate": 1.0, "mean_length": 10.0},
-        "ppo": {"mean_return": 0.8, "stderr_return": 0.1, "success_rate": 0.8, "mean_length": 12.0},
+        "pi_D*_empirical": {
+            "mean_return": 1.0, "stderr_return": 0.1, "success_rate": 1.0, "success_rate_stderr": 0.0,
+            "mean_length": 10.0,
+        },
+        "ppo": {
+            "mean_return": 0.8, "stderr_return": 0.1, "success_rate": 0.8, "success_rate_stderr": 0.02,
+            "mean_length": 12.0,
+        },
     }
     report2 = build_gap_report(results_without, reference_key="pi_D*_empirical")
     assert "uncovered_state_step_rate" not in report2.columns
+    assert "success_rate_stderr" in report2.columns
