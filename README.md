@@ -452,26 +452,6 @@ protocol for every policy):
   strength it is large enough to be worth investigating.
 
 
-### Next steps
-
-- **Deprioritize H4** (epochs) as the primary hypothesis.
-- **Prioritize H1, H2, H3, H5** first: the critic/advantage side (H1, H2)
-  hasn't been isolated yet, and H3 (clip range) / H5 (entropy coefficient)
-  are natural next candidates given how little the policy's entropy moves
-  regardless of epoch budget.
-- **Establish a single testing path** before running more variants: decide
-  the order H1–H7 will be tested in, and stick to changing exactly one
-  field per config per the project's own rule, all against this same
-  frozen `D` / `π_β` / `π_D*`.
-- **Visualizations**: a single baseline run is adequately summarized by
-  the table above. Once several H-hypothesis variants exist side by side,
-  a bar chart of `success_rate` (with `success_rate_stderr` as error bars)
-  across variants, and an overlaid `clip_frac`/`entropy`-vs-epoch plot from
-  the `results/*_history.csv` files, will likely be worth adding — deferred
-  until there is more than one real "modified" result to compare against
-  standard.
-
-
 ### Epoch-count ceiling analysis (H4, clip_eps=0.2)
 
 The 10-vs-30-epoch null result above only rules out a small range. To test
@@ -595,7 +575,12 @@ here points in a different direction from the success_rate/return
 evidence — if anything it sharpens the "`0.4` drifts, `0.3` doesn't"
 reading.
 
-Next: since neither epochs nor `clip_eps` alone closes the gap to `π_D*`,
+
+
+
+### Next steps
+
+Since neither epochs nor `clip_eps` alone closes the gap to `π_D*`,
 and the oscillation itself (not just its amplitude) persists across every
 `clip_eps` tested, H5 (`entropy_coef`) — the one native PPO lever most
 directly implicated by the entropy curves above — is the natural next
