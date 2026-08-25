@@ -75,7 +75,7 @@ def main():
         help="Deliberately distinct from every other eval seed already used in this project "
         "(tracking=12345, confirmation=54321, script 05's report=999).",
     )
-    parser.add_argument("--out-dir", default="results/analysis_epochs")
+    parser.add_argument("--out-dir", default="results/analysis")
     args = parser.parse_args()
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
