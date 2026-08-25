@@ -5,7 +5,17 @@ re-check on a genuinely different sample of episodes ALSO clears it.
 The logic, per eval check:
   1. Evaluate on `tracking_eval_seed` (same seed every check -- cheap,
      comparable signal for whether a crossing has happened at all).
-  2. If success_rate < target: nothing special, keep training.
+  2. If success_rate < target: keep training. If this value is BELOW but
+     within `near_target_zone_width` of target, and we weren't already
+     checking every iteration, switch to checking every single iteration
+     from here on -- this exists because a real jump between two
+     eval_every-spaced checks can leap straight over target_success_rate
+     without ever landing near it (observed: 33.6% -> 68.4% in one 5-
+     iteration gap). Once close, checking more often makes it much less
+     likely training overshoots far past target before the next check.
+     This does not guarantee landing exactly on target -- a big enough
+     jump can still clear the zone AND the target in one gap -- it only
+     reduces how far past it training is likely to land.
   3. If success_rate >= target: STOP training and immediately re-evaluate
      that exact same checkpoint on `confirmation_eval_seed` (a genuinely
      different sample of the same number of episodes).
@@ -13,7 +23,7 @@ The logic, per eval check:
          save it, done.
        - If the confirmation does NOT clear target: the first crossing was
          not robust to a different sample -- resume training and keep
-         looking, rather than accepting a possibly-lucky estimate.
+         looking (per-iteration checking, if already active, stays active).
 
 This directly tests robustness to eval-sampling noise (would a different
 batch of episodes have told the same story?), which repeating the SAME
@@ -85,10 +95,14 @@ def main():
         f"(tracking seed={prior_cfg.tracking_eval_seed}), immediately re-check the same checkpoint "
         f"on {prior_cfg.eval_episodes} INDEPENDENT episodes (seed={prior_cfg.confirmation_eval_seed}). "
         f"If that also clears target: stop and save. If not: resume training and keep looking.\n"
+        f"Checks run every {prior_cfg.eval_every} iterations until success_rate first comes within "
+        f"{prior_cfg.near_target_zone_width:.2f} of target from below, then every iteration.\n"
     )
 
     last_eval_res = None
     chosen_it, chosen_state_dict, chosen_eval_res, confirm_eval_res = None, None, None, None
+    effective_eval_every = prior_cfg.eval_every
+    in_near_target_zone = False
 
     t0 = time.time()
     for it in range(prior_cfg.total_iterations):
@@ -97,13 +111,14 @@ def main():
         stats = agent.update(trajectories)
 
         is_last_iter = it == prior_cfg.total_iterations - 1
-        if it % prior_cfg.eval_every == 0 or is_last_iter:
+        if it % effective_eval_every == 0 or is_last_iter:
             act_fn = make_neural_act_fn(agent.net, deterministic=True)
             eval_res = evaluate_policy(eval_env, act_fn, prior_cfg.eval_episodes, seed=prior_cfg.tracking_eval_seed)
             last_eval_res = eval_res
             elapsed = time.time() - t0
+            zone_tag = " [zone]" if in_near_target_zone else ""
             print(
-                f"[iter {it:4d} | {elapsed:6.1f}s] "
+                f"[iter {it:4d} | {elapsed:6.1f}s]{zone_tag} "
                 f"success_rate={eval_res['success_rate']:.3f}"
                 f"\u00b1{eval_res['success_rate_stderr']:.3f} "
                 f"mean_return={eval_res['mean_return']:.3f} "
@@ -138,6 +153,15 @@ def main():
                         f"{prior_cfg.target_success_rate:.2f}) -- the tracking-seed crossing wasn't robust "
                         f"to a different sample. Resuming training.\n"
                     )
+            elif not in_near_target_zone:
+                distance_below = prior_cfg.target_success_rate - eval_res["success_rate"]
+                if 0 <= distance_below <= prior_cfg.near_target_zone_width:
+                    in_near_target_zone = True
+                    effective_eval_every = 1
+                    print(
+                        f"  Within {prior_cfg.near_target_zone_width:.2f} of target from below -- "
+                        f"switching to per-iteration checks.\n"
+                    )
     else:
         # Loop exhausted total_iterations without ever landing a confirmed crossing.
         chosen_it, chosen_state_dict, chosen_eval_res, confirm_eval_res = None, agent.state_dict(), last_eval_res, None
@@ -160,6 +184,7 @@ def main():
             "confirmation_eval": confirm_eval_res,
             "confirmation_eval_seed": prior_cfg.confirmation_eval_seed if confirm_eval_res is not None else None,
             "checkpoint_iteration": chosen_it,
+            "reached_near_target_zone": in_near_target_zone,
         },
         out_path,
     )

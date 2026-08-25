@@ -19,6 +19,7 @@ hidden_sizes: [64, 64]
 target_success_rate: 0.35
 eval_episodes: 500         # note: raising this meaningfully slows each eval check
 eval_every: 5
+near_target_zone_width: 0.10   # within 10pp below target -> switch to per-iteration checks
 tracking_eval_seed: 12345      # reused every periodic check -- cheap crossing signal
 confirmation_eval_seed: 54321  # used right after a crossing, on a genuinely
                                 # different sample -- tests that estimate's robustness
