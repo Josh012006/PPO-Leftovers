@@ -628,28 +628,68 @@ whatever causes it.
 default) — highest best-observed (`0.950`) and highest mean (`0.881`) of
 every run tested so far.
 
+### GAE lambda sweep (H2, gae_lambda ∈ {0.0, 0.5, 0.90, 0.95, 1.0}, clip_eps=0.3, entropy_coef=0.01)
+
+Same 300-epoch protocol, `clip_eps=0.3` and `entropy_coef=0.01` now both
+held at their best settings, `gae_lambda` swept across its full valid
+range:
+
+| gae_lambda | best | mean | std |
+|---|---|---|---|
+| 0.0 | 0.348 | 0.030 | 0.043 |
+| 0.5 | 0.348 | 0.034 | 0.043 |
+| **0.90** | **0.954** | **0.908** | 0.090 |
+| 0.95 (previous best) | 0.950 | 0.881 | 0.099 |
+| 1.0 | 0.926 | 0.757 | 0.172 |
+
+This is the sharpest result of any sweep so far — a qualitative failure,
+not just a shift in oscillation amplitude. At `gae_lambda ∈ {0.0, 0.5}`,
+success_rate collapses within ~5 epochs and never exceeds the prior again
+(mean `≈0.03`). GAE at low `λ` leans almost entirely on `π_β`'s own critic,
+bootstrapped at every single step (`A_t ≈ r_t + γV(s_{t+1}) - V(s_t)`); that
+critic was only trained up to a ~35%-success policy, and an advantage
+signal built almost entirely on it transmits that inaccuracy directly,
+epoch after epoch, with nothing to correct it. At `gae_lambda=1.0`
+(pure Monte Carlo, minimal reliance on the critic), the collapse
+disappears but a different cost shows up exactly where predicted: `std`
+more than doubles the previous-best's (`0.172` vs `0.099`), the run
+briefly drops *below* the prior at epoch 5, and it oscillates more sharply
+than any non-collapsed run tested — the advantage estimate is now built
+almost entirely from `D`'s own noisy, stochastic realized returns, computed
+once and reused unchanged for all 300 epochs with nothing to average that
+noise away. `gae_lambda=0.90` lands in between and is the best config
+found in this project so far on both axes at once — higher ceiling *and*
+lower variance than the `0.95` default.
+
+<table>
+<tr>
+<td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_0_success_return.svg" width="100%"><br><em>gae_lambda=0.0 — collapses within ~5 epochs, never recovers</em></td>
+<td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_90_success_return.svg" width="100%"><br><em>gae_lambda=0.90 — new best: highest ceiling, lowest variance yet</em></td>
+</tr>
+</table>
+
+This is the strongest evidence yet for this project's leading hypothesis:
+advantage/return targets computed once from `π_β`'s critic and never
+refreshed across a 300-epoch window are not a minor caveat — their
+quality visibly makes or breaks the entire mechanism, in a way no other
+hyperparameter tested so far has.
+
+**Best configuration to date: `clip_eps=0.3`, `entropy_coef=0.01`,
+`gae_lambda=0.90`** — best-observed `0.954`, mean `0.908`.
+
 ### Next steps
 
-Three native PPO hyperparameters (epochs, `clip_eps`, `entropy_coef`) have
-now each been swept individually; none closes the gap to `π_D*` beyond
-~0.95, though `clip_eps` and `entropy_coef` both measurably shape the
-oscillation's ceiling and amplitude respectively without addressing
-whatever actually causes it. Two candidates remain untested:
-
-- **`gae_lambda` (H2)** — controls the bias/variance trade-off of the
-  advantage estimate, and is the most directly diagnostic test against
-  this project's leading hypothesis for the oscillation itself: advantage/
-  return targets computed once from `π_β`'s critic and never refreshed
-  across all 300 epochs (see "Epoch-count ceiling analysis" above). If the
-  oscillation is driven by a stale or noisy advantage signal, `gae_lambda`
-  — which directly trades that signal's bias against its variance — is
-  more likely to have a real effect on it than `entropy_coef`'s cosmetic
-  one.
-- **`value_coef` / `hidden_sizes` (H1/H6)** — the critic-capacity side,
-  not touched by any sweep so far.
-
-`gae_lambda` is the next single-variable test, on the same frozen
-`D`/`π_β`, `clip_eps=0.3`, `entropy_coef=0.01`.
+`gae_lambda` is the first hyperparameter to produce a qualitative change
+rather than a shift in an oscillation that was going to happen regardless
+— and the sweep so far only sampled five points across `[0, 1]`, with the
+interesting behavior concentrated between `0.5` and `1.0`. Before moving
+on to a different hypothesis, the immediate next step is narrowing around
+the new best point: `gae_lambda ∈ {0.80, 0.85, 0.90, 0.93, 0.97}`, same
+frozen `D`/`π_β`, `clip_eps=0.3`, `entropy_coef=0.01`, to locate the sweet
+spot precisely rather than trust a single sampled point. `value_coef` /
+`hidden_sizes` (H1/H6, the critic-capacity side) remain untested and are
+the natural follow-up after that, given how much critic quality has just
+turned out to matter.
 
 
 ## Project structure
