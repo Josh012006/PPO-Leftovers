@@ -726,14 +726,32 @@ fragile isolated peak.
 
 `gae_lambda`'s refinement confirms `0.90` sits in a stable plateau rather
 than needing further tuning — the GAE-lambda axis (H2) is closed for now.
-Two native PPO hyperparameter groups remain untested, both on the
-critic-capacity side that `gae_lambda`'s result already points toward:
+Two native PPO hyperparameter groups remain untested:
 
-- **`value_coef` (H1)** — how much weight the critic's own training gets
-  in the joint loss. If `π_β`'s critic is simply undertrained (it only
-  reached a ~35%-success policy before being frozen), giving it more
-  weight during the 300-epoch window itself might let it catch up rather
-  than staying stuck near its starting accuracy.
+- **`value_coef` (H1)** — controls how much the critic's regression loss
+  weighs in the combined loss
+  (`policy_loss + value_coef*value_loss + entropy_coef*entropy_loss`),
+  backpropagated through a single optimizer with a single, global
+  `clip_grad_norm_` call across *both* networks' parameters together. This
+  is not a project-specific quirk — it is verified to be exactly the
+  pattern Stable-Baselines3's reference PPO implementation uses (which
+  itself follows OpenAI Spinning Up / the original PPO2 code), so any
+  effect found here is a property of standard PPO, not a deviation from
+  it. What's specific to *this* project's design: `policy_net` and
+  `value_net` are fully separate (no shared trunk), so the usual "`value_coef`
+  balances shared-representation quality" story doesn't apply — and the
+  trainable critic's own quality feeds into nothing downstream in this
+  pipeline (advantages come from `π_β`'s frozen critic, never recomputed;
+  evaluation only ever reads `policy_net`). The only mechanism left by
+  which `value_coef` can matter here is the shared gradient-clipping norm:
+  a large `value_loss` term can dominate that combined norm and
+  inadvertently shrink the policy's own gradient step whenever clipping
+  triggers. This predicts the *opposite* of the naive "raise it so the
+  critic catches up" framing — lowering `value_coef` should be
+  neutral-to-helpful (less interference with the policy update), raising
+  it should, if anything, hurt. Test values:
+  `value_coef ∈ {0.0, 0.1, 0.25, 1.0}` (the current `0.5` default is
+  already covered by the existing best-config run).
 - **`hidden_sizes` (H6)** — network capacity. A critic too small to
   represent the environment's value function accurately would cap how
   good *any* advantage estimate can be, independent of `gae_lambda`.
