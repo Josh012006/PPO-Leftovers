@@ -593,28 +593,63 @@ here points in a different direction from the success_rate/return
 evidence — if anything it sharpens the "`0.4` drifts, `0.3` doesn't"
 reading.
 
+### Entropy coefficient sweep (H5, entropy_coef ∈ {0.0, 0.003, 0.01, 0.03, 0.1}, clip_eps=0.3)
+
+Same 300-epoch protocol, `clip_eps` fixed at the best setting found above
+(`0.3`), `entropy_coef` swept across two orders of magnitude:
+
+| entropy_coef | best | mean | std | final entropy | final clip_frac |
+|---|---|---|---|---|---|
+| 0.0 | 0.948 | 0.877 | 0.115 | 0.357 | 0.206 |
+| 0.003 | 0.948 | 0.875 | 0.102 | 0.385 | 0.214 |
+| **0.01 (default)** | **0.950** | **0.881** | 0.099 | 0.441 | 0.267 |
+| 0.03 | 0.946 | 0.876 | 0.099 | 0.546 | 0.357 |
+| 0.1 | 0.938 | 0.881 | 0.080 | 0.827 | 0.471 |
+
+**`entropy_coef` does not shorten the gap.** Best success_rate stays within
+`[0.938, 0.950]` and mean within `[0.875, 0.881]` across the whole
+range — no meaningful movement toward the `0.992` ceiling. What *does*
+change, monotonically, is the oscillation's amplitude: `std` falls from
+`0.115` (`ent=0.0`) to `0.080` (`ent=0.1`) as `entropy_coef` increases, and
+at `ent=0.1` the run visibly stabilizes after ~epoch 50 (one early dip,
+then a smooth plateau) rather than continuing to swing sharply —
+`clip_frac`/`entropy` genuinely saturate there, unlike every lower-value
+run. `entropy_coef` acts as a damper on the oscillation, not a fix for
+whatever causes it.
+
+<table>
+<tr>
+<td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_0_success_return.svg" width="100%"><br><em>entropy_coef=0.0 — repeated deep dives persist through epoch 300</em></td>
+<td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_1_success_return.svg" width="100%"><br><em>entropy_coef=0.1 — one early dip, then a stable plateau from ~epoch 50 on</em></td>
+</tr>
+</table>
+
+**Best configuration to date: `clip_eps=0.3`, `entropy_coef=0.01`** (the
+default) — highest best-observed (`0.950`) and highest mean (`0.881`) of
+every run tested so far.
+
 ### Next steps
 
-Since neither epochs nor `clip_eps` alone closes the gap to `π_D*`,
-and the oscillation itself (not just its amplitude) persists across every
-`clip_eps` tested, H5 (`entropy_coef`) — the one native PPO lever most
-directly implicated by the entropy curves above — is the natural next
-single-variable test on this same frozen `D`/`π_β`.
+Three native PPO hyperparameters (epochs, `clip_eps`, `entropy_coef`) have
+now each been swept individually; none closes the gap to `π_D*` beyond
+~0.95, though `clip_eps` and `entropy_coef` both measurably shape the
+oscillation's ceiling and amplitude respectively without addressing
+whatever actually causes it. Two candidates remain untested:
 
+- **`gae_lambda` (H2)** — controls the bias/variance trade-off of the
+  advantage estimate, and is the most directly diagnostic test against
+  this project's leading hypothesis for the oscillation itself: advantage/
+  return targets computed once from `π_β`'s critic and never refreshed
+  across all 300 epochs (see "Epoch-count ceiling analysis" above). If the
+  oscillation is driven by a stale or noisy advantage signal, `gae_lambda`
+  — which directly trades that signal's bias against its variance — is
+  more likely to have a real effect on it than `entropy_coef`'s cosmetic
+  one.
+- **`value_coef` / `hidden_sizes` (H1/H6)** — the critic-capacity side,
+  not touched by any sweep so far.
 
-
-
-
-
-
-
-
-
-
-
-
-
-
+`gae_lambda` is the next single-variable test, on the same frozen
+`D`/`π_β`, `clip_eps=0.3`, `entropy_coef=0.01`.
 
 
 ## Project structure

@@ -10,16 +10,14 @@
 epochs: 300
 minibatch_size: 256
 
-# --- PPO objective (unchanged from standard) ---
 clip_eps: 0.3
 gamma: 0.99
 gae_lambda: 0.95
-entropy_coef: 0.1
+entropy_coef: 0.01
 value_coef: 0.5
 max_grad_norm: 0.5
 normalize_advantages: true
 
-# --- optimization (unchanged from standard) ---
 lr: 0.0003
 hidden_sizes: [64, 64]
 
