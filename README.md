@@ -690,19 +690,60 @@ hyperparameter tested so far has.
 **Best configuration to date: `clip_eps=0.3`, `entropy_coef=0.01`,
 `gae_lambda=0.90`** — best-observed `0.954`, mean `0.908`.
 
+### GAE lambda refinement (clip_eps=0.3, entropy_coef=0.01, gae_lambda ∈ {0.80, 0.85, 0.90, 0.93, 0.95, 0.97})
+
+Narrowing around the new best point rather than trusting a single sampled
+value:
+
+| gae_lambda | best | mean | std |
+|---|---|---|---|
+| 0.80 | 0.954 | 0.882 | 0.092 |
+| 0.85 | 0.950 | 0.899 | 0.092 |
+| **0.90** | 0.954 | **0.908** | 0.090 |
+| 0.93 | 0.952 | 0.902 | **0.087** |
+| 0.95 | 0.950 | 0.881 | 0.099 |
+| 0.97 | 0.952 | 0.857 | 0.139 |
+
+`best` is essentially flat across the whole range (`0.950`–`0.954`) — this
+refinement didn't uncover a sharper peak, it confirmed the wide sweep had
+already landed in the right neighborhood. `mean` and `std` are the more
+informative signals here: both stay favorable across `[0.85, 0.93]`, with
+`0.90` retaining the highest mean (`0.908`), and both degrade clearly by
+`0.97` (mean drops to `0.857`, std rises to `0.139`) — the same variance
+cost that dominates at `gae_lambda=1.0`, already visible in miniature (see
+image below). One honest caveat: each point here is a single run with no
+repeated seeds, so the precise ordering among `{0.85, 0.90, 0.93}` (a 1–3
+percentage-point spread on mean) shouldn't be read as more than "this is
+a good, fairly wide plateau" — not "`0.90` is optimal to the decimal."
+
+<img src="results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_97_success_return.svg" width="50%"><br><em>gae_lambda=0.97 — deeper, more frequent dips than 0.90, foreshadowing the collapse seen at 1.0.</em>
+
+**Confirmed best configuration: `clip_eps=0.3`, `entropy_coef=0.01`,
+`gae_lambda=0.90`** — sits inside a broad, stable plateau rather than on a
+fragile isolated peak.
+
 ### Next steps
 
-`gae_lambda` is the first hyperparameter to produce a qualitative change
-rather than a shift in an oscillation that was going to happen regardless
-— and the sweep so far only sampled five points across `[0, 1]`, with the
-interesting behavior concentrated between `0.5` and `1.0`. Before moving
-on to a different hypothesis, the immediate next step is narrowing around
-the new best point: `gae_lambda ∈ {0.80, 0.85, 0.90, 0.93, 0.97}`, same
-frozen `D`/`π_β`, `clip_eps=0.3`, `entropy_coef=0.01`, to locate the sweet
-spot precisely rather than trust a single sampled point. `value_coef` /
-`hidden_sizes` (H1/H6, the critic-capacity side) remain untested and are
-the natural follow-up after that, given how much critic quality has just
-turned out to matter.
+`gae_lambda`'s refinement confirms `0.90` sits in a stable plateau rather
+than needing further tuning — the GAE-lambda axis (H2) is closed for now.
+Two native PPO hyperparameter groups remain untested, both on the
+critic-capacity side that `gae_lambda`'s result already points toward:
+
+- **`value_coef` (H1)** — how much weight the critic's own training gets
+  in the joint loss. If `π_β`'s critic is simply undertrained (it only
+  reached a ~35%-success policy before being frozen), giving it more
+  weight during the 300-epoch window itself might let it catch up rather
+  than staying stuck near its starting accuracy.
+- **`hidden_sizes` (H6)** — network capacity. A critic too small to
+  represent the environment's value function accurately would cap how
+  good *any* advantage estimate can be, independent of `gae_lambda`.
+
+`value_coef` is the more natural next test: a direct, single-field change
+to the same joint loss already in use. `hidden_sizes` is a bigger,
+more disruptive change to make first — this project's rigor requires `θ`
+to start exactly at `π_β`'s weights, so changing the network's shape would
+also require retraining a new prior checkpoint (and recollecting `D` from
+it) at that new architecture, not just editing one YAML field.
 
 
 ## Project structure
