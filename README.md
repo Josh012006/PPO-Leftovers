@@ -1,13 +1,12 @@
 # PPO Exploitation Gap
 
 **Research question.** Given a fixed amount of experience `D`, what prevents
-PPO from reaching the best policy that can be extracted from `D`, and can we
-modify PPO to measurably reduce that gap?
+PPO from reaching the best policy that can be extracted from `D`? Can that gap be reduced by a careful selection of hyperparameters or does it require a change to the optimization mechanism of PPO itself ? 
 
 This is a study of PPO's *optimization/exploitation* behavior in isolation
 from exploration: the environment, the data-collection policy, and the
 dataset itself are all held fixed, so that any performance difference
-between algorithm variants is attributable to how well each one extracts
+between experiments is attributable to how well each one extracts
 information already present in `D` — not to differences in what was
 collected.
 
