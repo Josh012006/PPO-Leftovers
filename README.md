@@ -630,6 +630,19 @@ every run tested so far.
 
 ### GAE lambda sweep (H2, gae_lambda ∈ {0.0, 0.5, 0.90, 0.95, 1.0}, clip_eps=0.3, entropy_coef=0.01)
 
+Widening `epochs` far beyond the conventional range (H4, above) surfaces a
+risk specific to this project's design: advantages/returns are computed
+**once**, from `π_β`'s own critic, before any of up to 300 epochs of
+updates run against them (see "What fixed-D training means for PPO,
+operationally") — the longer that window, the more that fixed target can
+drift out of step with the policy `θ` has actually become by the time
+later epochs use it. `gae_lambda` is the natural next test precisely
+because it controls how much the advantage estimate leans on that
+(possibly-stale) critic versus on `D`'s own directly-observed rewards —
+`λ→0` bootstraps through the critic at every single step, `λ→1` uses the
+real accumulated rewards along the trajectory and treats the critic as
+just a baseline.
+
 Same 300-epoch protocol, `clip_eps=0.3` and `entropy_coef=0.01` now both
 held at their best settings, `gae_lambda` swept across its full valid
 range:
