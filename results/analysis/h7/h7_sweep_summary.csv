@@ -1,0 +1,10 @@
+value_coef,max_grad_norm,prefix,best,mean,std,final,csv_path,status
+0.0,0.1,h7_clip_0_3_ent_0_01_gae_0_90_val_0_0_maxgrad_0_1,0.946,0.8941639344262294,0.08477286915200108,0.928,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_0_0_maxgrad_0_1.csv,ran
+0.0,0.5,h7_clip_0_3_ent_0_01_gae_0_90_val_0_0_maxgrad_0_5,0.954,0.9010819672131146,0.09392590964548726,0.948,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_0_0_maxgrad_0_5.csv,ran
+0.0,1.0,h7_clip_0_3_ent_0_01_gae_0_90_val_0_0_maxgrad_1_0,0.954,0.8921311475409837,0.09739669320359155,0.918,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_0_0_maxgrad_1_0.csv,ran
+0.5,0.1,h7_clip_0_3_ent_0_01_gae_0_90_val_0_5_maxgrad_0_1,0.952,0.898983606557377,0.08539291379719957,0.948,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_0_5_maxgrad_0_1.csv,ran
+0.5,0.5,h7_clip_0_3_ent_0_01_gae_0_90_val_0_5_maxgrad_0_5,0.954,0.9075737704918033,0.08999860351071999,0.948,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_0_5_maxgrad_0_5.csv,ran
+0.5,1.0,h7_clip_0_3_ent_0_01_gae_0_90_val_0_5_maxgrad_1_0,0.952,0.9021967213114754,0.08678686914353868,0.95,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_0_5_maxgrad_1_0.csv,ran
+1.0,0.1,h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_1,0.952,0.8940983606557377,0.08608633358786454,0.928,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_1.csv,ran
+1.0,0.5,h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_5,0.952,0.9069180327868851,0.08818206451842822,0.948,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_5.csv,ran
+1.0,1.0,h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_1_0,0.952,0.8970819672131148,0.09549350677436437,0.95,results\analysis\h7\h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_1_0.csv,ran
