@@ -1,0 +1,31 @@
+# H7 sweep: lr, the one remaining untested field alongside minibatch_size.
+# Single optimizer covers BOTH policy_net and value_net (see README,
+# "Value coefficient sweep"), so lr scales both networks' step size
+# together -- no way to isolate one from the other the way value_coef
+# could isolate the critic's own gradient magnitude.
+#
+# Prediction, based on the pattern across every sweep so far (looser
+# settings -> more oscillation without a higher ceiling; tighter ->
+# less oscillation, similar or slightly lower ceiling): lower lr should
+# dampen the oscillation amplitude, similar to max_grad_norm=0.1's effect,
+# without necessarily closing the gap to the pi_D* ceiling. Untested
+# assumption -- that's what this sweep is for.
+#
+# 0.0003 (the current default) is already covered by the existing
+# best-config run; not repeated here.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.3
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: [0.00003, 0.0001, 0.001, 0.003]
+hidden_sizes: [64, 64]
+
+seed: 0

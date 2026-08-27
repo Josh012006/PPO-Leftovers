@@ -770,30 +770,68 @@ direction, anywhere in `[0.0, 1.0]`.** This is itself informative — it
 confirms the trainable critic's own quality is functionally irrelevant to
 this pipeline's outcome, exactly as the mechanism above predicts.
 
+### Gradient-clipping cross sweep (H7 × H1, max_grad_norm ∈ {0.1, 0.5, 1.0} × value_coef ∈ {0.0, 0.5, 1.0}, clip_eps=0.3, entropy_coef=0.01, gae_lambda=0.90)
+
+The single-axis `value_coef` sweep only ruled out interference at
+`max_grad_norm=0.5`. This cross sweep (run via the new `scripts/analyze_h7.py`,
+which accepts any `PPOHyperparams` YAML field as a list and runs the full
+cartesian product automatically — see `configs/ppo_fixed_d_h7_sweep.yaml`)
+tests the specific remaining possibility: does a *tighter* `max_grad_norm`
+surface the interference a looser one couldn't?
+
+| value_coef ＼ max_grad_norm | 0.1 | 0.5 | 1.0 |
+|---|---|---|---|
+| **0.0** | 0.946 / 0.894 / 0.085 | 0.954 / 0.901 / 0.094 | 0.954 / 0.892 / 0.097 |
+| **0.5** | 0.952 / 0.899 / 0.085 | 0.954 / 0.908 / 0.090 | 0.952 / 0.902 / 0.087 |
+| **1.0** | 0.952 / 0.894 / 0.086 | 0.952 / 0.907 / 0.088 | 0.952 / 0.897 / 0.095 |
+
+*(each cell: best / mean / std)*
+
+**No interaction found — including at `max_grad_norm=0.1`, the exact
+condition where interference should have been easiest to detect.** Reading
+across that column: `mean` = `0.894`, `0.899`, `0.894` for
+`value_coef=0.0, 0.5, 1.0` — flat, no monotonic trend, `value_coef=1.0` is
+not worse than `value_coef=0.0` even with the least clipping headroom
+available. The `value_coef=0.0` and `value_coef=1.0` runs at
+`max_grad_norm=0.1` are visually indistinguishable — same four deep dips,
+same envelope (below). This closes H1 with more confidence than the
+single-axis sweep alone: not just "no effect found," but "no effect found
+even where it was specifically sought."
+
+<img src="results/analysis/h7/h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_1_success_return.svg" width="60%"><br><em>value_coef=1.0, max_grad_norm=0.1 — compare against the value_coef=0.0 run at the same max_grad_norm (README text above): same four dips, same envelope.</em>
+
+A smaller, secondary finding sits independent of `value_coef`:
+`max_grad_norm=0.5` (the current default) gives the highest `mean` in
+*all three* `value_coef` rows (not just on average), and `max_grad_norm=0.1`
+gives the lowest `std` in all three — a modest, consistent stability/
+performance trade-off, on the order of the same effect size already
+flagged as close-to-noise in the `gae_lambda` refinement (~1.5
+percentage points) rather than anything resembling `gae_lambda`'s
+qualitative swings.
+
+**Best configuration remains unchanged: `clip_eps=0.3`, `entropy_coef=0.01`,
+`gae_lambda=0.90`** — this sweep's own best cell
+(`value_coef=0.5`, `max_grad_norm=0.5`) reproduces `best=0.954`,
+`mean=0.908` exactly, matching the existing best-config run.
+
 ### Next steps
 
-Three native PPO hyperparameter groups have now been individually tested
-beyond `epochs`/`clip_eps`/`entropy_coef`: `gae_lambda` (closed, real
-effect, best at `0.90`) and `value_coef` (closed, no effect). Two remain:
+Six of the seven native PPO hyperparameter groups have now been tested:
+`epochs` (H4, partial factor), `clip_eps` (H3, real effect), `entropy_coef`
+(H5, dampens amplitude only), `gae_lambda` (H2, the strongest effect
+found), `value_coef` (H1, closed — no effect, confirmed via cross sweep),
+and `max_grad_norm` (H7, partial — modest main effect, no interaction).
+`hidden_sizes` (H6) remains deliberately deprioritized: network capacity
+is not expected to be the bottleneck for a problem this size, and testing
+it would require retraining a new prior checkpoint (and recollecting `D`)
+at a different architecture — a much larger, less comparable change than
+any single-field edit tried so far.
 
-- **`hidden_sizes` (H6)** — network capacity. A critic too small to
-  represent the environment's value function accurately would cap how
-  good *any* advantage estimate can be, independent of `gae_lambda`. The
-  more disruptive of the two to test: this project's rigor requires `θ`
-  to start exactly at `π_β`'s weights, so changing the network's shape
-  would also require retraining a new prior checkpoint (and recollecting
-  `D` from it) at that new architecture, not just editing one YAML field.
-- **`lr` / `minibatch_size` / `max_grad_norm` (H7)** — `max_grad_norm` in
-  particular is now more interesting than it looked before `value_coef`
-  was tested: it is the *other* lever controlling whether the
-  gradient-clipping interference channel above can ever actually trigger.
-  A tighter `max_grad_norm` might surface the interference that a null
-  `value_coef` sweep couldn't find at the current `0.5` setting — worth
-  checking before concluding that channel never matters at all.
-
-`max_grad_norm` is the natural next single-field test: cheaper than
-`hidden_sizes`, and it directly follows up on an open question `value_coef`
-raised rather than closed.
+What's left of H7: **`lr` and `minibatch_size`**, neither touched by any
+sweep to date. `lr` is the more natural next test — a direct, single-field
+change, and the last real "does this native PPO hyperparameter close any
+of the remaining gap" question before treating the hyperparameter-tuning
+axis as substantially explored.
 
 
 ## Project structure
