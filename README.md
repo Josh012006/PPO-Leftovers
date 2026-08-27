@@ -722,46 +722,78 @@ a good, fairly wide plateau" — not "`0.90` is optimal to the decimal."
 `gae_lambda=0.90`** — sits inside a broad, stable plateau rather than on a
 fragile isolated peak.
 
+### Value coefficient sweep (H1, value_coef ∈ {0.0, 0.1, 0.25, 0.5, 1.0}, clip_eps=0.3, entropy_coef=0.01, gae_lambda=0.90)
+
+`value_coef` weighs the critic's regression loss in the combined loss
+backpropagated through a single optimizer with a single, global
+`clip_grad_norm_` call across *both* networks' parameters together —
+verified to be exactly the pattern Stable-Baselines3's reference PPO
+implementation uses (itself following OpenAI Spinning Up / the original
+PPO2 code), so this is a property of standard PPO, not a deviation from
+it. Because `policy_net` and `value_net` are fully separate here (no
+shared trunk) and advantages come from `π_β`'s frozen critic (never
+recomputed from the trainable one), the only channel left for
+`value_coef` to matter is that shared gradient-clipping norm — a large
+`value_loss` could in principle dominate it and shrink the policy's own
+gradient step:
+
+| value_coef | best | mean | std |
+|---|---|---|---|
+| 0.0 | 0.954 | 0.901 | 0.094 |
+| 0.1 | 0.952 | 0.911 | 0.085 |
+| 0.25 | 0.954 | 0.906 | 0.089 |
+| 0.5 (default) | 0.954 | 0.908 | 0.090 |
+| 1.0 | 0.952 | 0.907 | 0.088 |
+
+**Flat, in every column, across the full range.** `best` varies by at most
+`0.002` (checkpoint-timing noise, not signal), `mean` by one percentage
+point, `std` by under one. The hypothesized interference channel exists in
+principle (confirmed against real PPO reference code above) but never
+actually triggers at this project's `max_grad_norm=0.5` — `value_loss`
+apparently never gets large enough to dominate the combined norm,
+regardless of how much weight `value_coef` gives it.
+
+One check worth documenting because it nearly produced a wrong
+conclusion: these five runs also converge noticeably faster and more
+smoothly than the `clip_eps`/`entropy_coef` sweeps run earlier (e.g.
+`success_rate≈0.90` already by epoch 5, versus `≈0.65` for those earlier
+runs). This *looked* like a `value_coef` effect at first glance — but all
+five values here share `gae_lambda=0.90`, and all five land on the *exact
+same* epoch-5 value (`0.898`, matching to three decimals). Cross-checking
+against every other saved run confirms this fast, smooth convergence is a
+signature of `gae_lambda≈0.90` (see above), entirely independent of
+`value_coef` — a useful reminder to check what else was held fixed before
+attributing an effect to the one variable being swept.
+
+**H1 is closed: `value_coef` has no measurable effect, in either
+direction, anywhere in `[0.0, 1.0]`.** This is itself informative — it
+confirms the trainable critic's own quality is functionally irrelevant to
+this pipeline's outcome, exactly as the mechanism above predicts.
+
 ### Next steps
 
-`gae_lambda`'s refinement confirms `0.90` sits in a stable plateau rather
-than needing further tuning — the GAE-lambda axis (H2) is closed for now.
-Two native PPO hyperparameter groups remain untested:
+Three native PPO hyperparameter groups have now been individually tested
+beyond `epochs`/`clip_eps`/`entropy_coef`: `gae_lambda` (closed, real
+effect, best at `0.90`) and `value_coef` (closed, no effect). Two remain:
 
-- **`value_coef` (H1)** — controls how much the critic's regression loss
-  weighs in the combined loss
-  (`policy_loss + value_coef*value_loss + entropy_coef*entropy_loss`),
-  backpropagated through a single optimizer with a single, global
-  `clip_grad_norm_` call across *both* networks' parameters together. This
-  is not a project-specific quirk — it is verified to be exactly the
-  pattern Stable-Baselines3's reference PPO implementation uses (which
-  itself follows OpenAI Spinning Up / the original PPO2 code), so any
-  effect found here is a property of standard PPO, not a deviation from
-  it. What's specific to *this* project's design: `policy_net` and
-  `value_net` are fully separate (no shared trunk), so the usual "`value_coef`
-  balances shared-representation quality" story doesn't apply — and the
-  trainable critic's own quality feeds into nothing downstream in this
-  pipeline (advantages come from `π_β`'s frozen critic, never recomputed;
-  evaluation only ever reads `policy_net`). The only mechanism left by
-  which `value_coef` can matter here is the shared gradient-clipping norm:
-  a large `value_loss` term can dominate that combined norm and
-  inadvertently shrink the policy's own gradient step whenever clipping
-  triggers. This predicts the *opposite* of the naive "raise it so the
-  critic catches up" framing — lowering `value_coef` should be
-  neutral-to-helpful (less interference with the policy update), raising
-  it should, if anything, hurt. Test values:
-  `value_coef ∈ {0.0, 0.1, 0.25, 1.0}` (the current `0.5` default is
-  already covered by the existing best-config run).
 - **`hidden_sizes` (H6)** — network capacity. A critic too small to
   represent the environment's value function accurately would cap how
-  good *any* advantage estimate can be, independent of `gae_lambda`.
+  good *any* advantage estimate can be, independent of `gae_lambda`. The
+  more disruptive of the two to test: this project's rigor requires `θ`
+  to start exactly at `π_β`'s weights, so changing the network's shape
+  would also require retraining a new prior checkpoint (and recollecting
+  `D` from it) at that new architecture, not just editing one YAML field.
+- **`lr` / `minibatch_size` / `max_grad_norm` (H7)** — `max_grad_norm` in
+  particular is now more interesting than it looked before `value_coef`
+  was tested: it is the *other* lever controlling whether the
+  gradient-clipping interference channel above can ever actually trigger.
+  A tighter `max_grad_norm` might surface the interference that a null
+  `value_coef` sweep couldn't find at the current `0.5` setting — worth
+  checking before concluding that channel never matters at all.
 
-`value_coef` is the more natural next test: a direct, single-field change
-to the same joint loss already in use. `hidden_sizes` is a bigger,
-more disruptive change to make first — this project's rigor requires `θ`
-to start exactly at `π_β`'s weights, so changing the network's shape would
-also require retraining a new prior checkpoint (and recollecting `D` from
-it) at that new architecture, not just editing one YAML field.
+`max_grad_norm` is the natural next single-field test: cheaper than
+`hidden_sizes`, and it directly follows up on an open question `value_coef`
+raised rather than closed.
 
 
 ## Project structure
