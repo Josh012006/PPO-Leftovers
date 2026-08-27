@@ -1,0 +1,36 @@
+# H7 x H1 cross sweep: max_grad_norm x value_coef.
+#
+# Why crossed rather than swept separately: value_coef alone showed no
+# effect at max_grad_norm=0.5 (see README, "Value coefficient sweep") --
+# but that null result only rules out interference AT that specific clip
+# threshold. The hypothesized mechanism (a large value_loss gradient
+# dominating the single global clip_grad_norm_ call shared by policy_net
+# and value_net, see README) predicts the interference should be easier
+# to trigger at a TIGHTER max_grad_norm, where less headroom exists before
+# clipping kicks in. Crossing the two axes is the only way to tell "no
+# interference exists" apart from "interference exists but max_grad_norm
+# was too loose to reveal it at value_coef alone".
+#
+# Grid: {0.1, 0.5, 1.0} x {0.0, 0.5, 1.0} = 9 combinations (each up to
+# 300 epochs + 61 evaluations of 500 episodes -- expect this to take a
+# while; the script is resumable, see --force in analyze_h7.py).
+# 0.1/1.0 are deliberately the tight/loose extremes around the current
+# 0.5 default on each axis; 0.0/1.0 are value_coef's own tested extremes
+# from the earlier single-axis sweep. Edit these lists directly to widen
+# or narrow the grid -- analyze_h7.py handles any list length.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.3
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.01
+value_coef: [0.0, 0.5, 1.0]
+max_grad_norm: [0.1, 0.5, 1.0]
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
