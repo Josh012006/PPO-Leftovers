@@ -1,0 +1,31 @@
+# H7 sweep: minibatch_size, the last untested H7 field.
+#
+# D has ~525K-626K transitions; at the default minibatch_size=256 that's
+# roughly 2000+ gradient steps per epoch. minibatch_size controls both the
+# noise per step (smaller batches = noisier gradient estimates) AND the
+# total number of optimizer steps taken per epoch (smaller batches = more
+# steps for the same pass through D) -- both axes lr's sweep just showed
+# matter a lot. Prediction: given lr's finding that both "too many small
+# steps" (low lr) and "too few large steps worth of movement" failure
+# modes exist, minibatch_size might show a similar-shaped (narrow,
+# two-sided) sensitivity rather than a flat null result -- but this is an
+# open question, not an assumption to trust without testing.
+#
+# 256 (the current default) is already covered by the existing best-config
+# run; not repeated here.
+
+epochs: 300
+minibatch_size: [64, 128, 512, 1024]
+
+clip_eps: 0.3
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0

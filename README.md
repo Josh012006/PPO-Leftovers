@@ -814,24 +814,79 @@ qualitative swings.
 (`value_coef=0.5`, `max_grad_norm=0.5`) reproduces `best=0.954`,
 `mean=0.908` exactly, matching the existing best-config run.
 
+### Learning rate sweep (H7, lr ∈ {0.00003, 0.0001, 0.0003, 0.001, 0.003}, clip_eps=0.3, entropy_coef=0.01, gae_lambda=0.90)
+
+The last single-field H7 test before `minibatch_size`: does moving `lr`
+away from the standard `3e-4` default open up any of the remaining gap?
+
+| lr | best | mean | std | epoch-5 | dips (<0.8)/61 |
+|---|---|---|---|---|---|
+| `3e-05` (0.1×) | 0.920 | 0.801 | 0.198 | 0.182 | 17 |
+| `0.0001` (0.33×) | 0.920 | 0.873 | 0.115 | 0.364 | 7 |
+| **`0.0003` (default)** | **0.954** | **0.908** | **0.090** | 0.898 | **4** |
+| `0.001` (3.3×) | 0.952 | 0.882 | 0.095 | 0.898 | 5 |
+| `0.003` (10×) | 0.928 | 0.693 | 0.208 | 0.912 | 38 |
+
+**The default wins on every metric at once.** Moving `lr` by 3× in either
+direction already measurably hurts; by 10×, both directions are clearly
+worse — for two *different* reasons, visible in the runs themselves, not
+just the aggregate numbers.
+
+Too low (`3e-05`, `0.0001`): a slow start, not primarily ongoing
+instability. `epoch-5=0.182` for `3e-05` — still *below* the prior
+(`0.348`) five epochs in — and the run doesn't reach a good plateau until
+~epoch 45. Much of the 300-epoch budget is spent in this transient climb
+rather than in a settled state, which is most of what drives the high
+`std` here.
+
+Too high (`0.003`): the opposite problem. It reaches a good region
+immediately (`epoch-5=0.912`, as fast as the default) but cannot stay
+there — 38 of 61 checkpoints fall below `0.80`, by far the most chaotic
+run found in this entire project (`std=0.208`, exceeding even
+`gae_lambda=1.0`'s `0.172`), including a drop back toward the prior's own
+level around epoch 190.
+
+<table>
+<tr>
+<td width="50%"><img src="results/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_3eneg05_success_return.svg" width="100%"><br><em>lr=3e-05 — slow to get going; much of the 300-epoch budget spent below its own eventual plateau.</em></td>
+<td width="50%"><img src="results/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_0_003_success_return.svg" width="100%"><br><em>lr=0.003 — gets there fast, cannot stay; the most chaotic run found in this project.</em></td>
+</tr>
+</table>
+
+**`lr` is closed: the standard `3e-4` default is already close to optimal
+here, not a place with headroom.** Along with `gae_lambda`, this is the
+second hyperparameter to show a real (not merely cosmetic) effect — but
+with a narrow, symmetric optimum rather than `gae_lambda`'s broad plateau,
+and centered almost exactly on the value the field would have shipped
+with by default anyway.
+
+**Best configuration remains unchanged: `clip_eps=0.3`, `entropy_coef=0.01`,
+`gae_lambda=0.90`, `lr=0.0003`** — best `0.954`, mean `0.908`.
+
 ### Next steps
 
-Six of the seven native PPO hyperparameter groups have now been tested:
+Of the seven native PPO hyperparameter groups, six are now closed:
 `epochs` (H4, partial factor), `clip_eps` (H3, real effect), `entropy_coef`
-(H5, dampens amplitude only), `gae_lambda` (H2, the strongest effect
-found), `value_coef` (H1, closed — no effect, confirmed via cross sweep),
-and `max_grad_norm` (H7, partial — modest main effect, no interaction).
-`hidden_sizes` (H6) remains deliberately deprioritized: network capacity
-is not expected to be the bottleneck for a problem this size, and testing
-it would require retraining a new prior checkpoint (and recollecting `D`)
-at a different architecture — a much larger, less comparable change than
-any single-field edit tried so far.
+(H5, amplitude only), `gae_lambda` (H2, the strongest effect found),
+`value_coef` (H1, no effect, confirmed via cross sweep), `max_grad_norm`
+(H7, modest main effect, no interaction), and now `lr` (H7, narrow optimum
+sitting almost exactly on the default). Only `minibatch_size` (the
+remaining H7 field) is untested.
 
-What's left of H7: **`lr` and `minibatch_size`**, neither touched by any
-sweep to date. `lr` is the more natural next test — a direct, single-field
-change, and the last real "does this native PPO hyperparameter close any
-of the remaining gap" question before treating the hyperparameter-tuning
-axis as substantially explored.
+**H6 (`hidden_sizes`) is under discussion, not a closed decision.** The
+case for dropping it: the ground-truth state space here is small (900
+states) and the observation is 8-dimensional — a two-layer `64×64` MLP is
+substantial capacity relative to that, and network capacity is rarely the
+bottleneck for problems this size in typical RL practice. Against
+dropping it: that's an assumption this project hasn't actually tested,
+and it's the one remaining hypothesis that could affect `π_β`'s critic
+*accuracy itself* — upstream of everything `gae_lambda`'s results turned
+out to hinge on — rather than just the fixed-D update mechanism everything
+else tested operates on. Unresolved for now.
+
+`minibatch_size` is the natural next test regardless of how H6 is
+resolved: closes H7 fully, a single-field change, no architecture change
+required.
 
 
 ## Project structure
