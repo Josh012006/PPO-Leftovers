@@ -1219,7 +1219,7 @@ this is implemented yet.
   elsewhere; worth checking before implementing.
 
 
-  ## Literature
+## Literature
 
 Papers this project's design or discussion draws on directly — not a
 general reading list, only what's actually behind a specific decision or
