@@ -1,0 +1,5 @@
+lr,prefix,best,mean,std,final,csv_path,status
+3e-05,lr_clip_0_3_ent_0_01_gae_0_90_lr_3eneg05,0.92,0.8007213114754098,0.1979141338348141,0.92,results\analysis\lr\lr_clip_0_3_ent_0_01_gae_0_90_lr_3eneg05.csv,ran
+0.0001,lr_clip_0_3_ent_0_01_gae_0_90_lr_0_0001,0.92,0.8731475409836067,0.115265756126957,0.918,results\analysis\lr\lr_clip_0_3_ent_0_01_gae_0_90_lr_0_0001.csv,ran
+0.001,lr_clip_0_3_ent_0_01_gae_0_90_lr_0_001,0.952,0.8823934426229508,0.09455144608245902,0.918,results\analysis\lr\lr_clip_0_3_ent_0_01_gae_0_90_lr_0_001.csv,ran
+0.003,lr_clip_0_3_ent_0_01_gae_0_90_lr_0_003,0.928,0.6926229508196722,0.20778275224654127,0.854,results\analysis\lr\lr_clip_0_3_ent_0_01_gae_0_90_lr_0_003.csv,ran
