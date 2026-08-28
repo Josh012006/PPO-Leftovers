@@ -1052,7 +1052,7 @@ optional context for judging what is left to explain — it changes the
 number that needs explaining by a large amount.
 
 **The residual gap is now small: `95.4%` vs. `π_D*`'s `99.2%` — about
-`0.04`.** Every hyperparameter tested, `gae_lambda` aside, has shown
+`4% (0.04)`.** Every hyperparameter tested, `gae_lambda` aside, has shown
 either no effect or a modest one; nothing found so far explains this
 remaining gap. Whether it is worth pursuing further is a judgment call —
 our working speculation is that for an environment this small and this
