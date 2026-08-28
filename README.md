@@ -863,6 +863,59 @@ with by default anyway.
 **Best configuration remains unchanged: `clip_eps=0.3`, `entropy_coef=0.01`,
 `gae_lambda=0.90`, `lr=0.0003`** — best `0.954`, mean `0.908`.
 
+### Critic accuracy diagnostic (informing H6)
+
+Testing H6 (`hidden_sizes`) properly requires a new prior checkpoint —
+and therefore a new `D` and a new `π_D*`, since `θ` must start exactly at
+`π_β`'s weights — a much bigger, less comparable change than any other
+single-field test in this project. Before paying that cost,
+`scripts/analyze_critic_accuracy.py` asks a narrower, much cheaper
+question: is `π_β`'s *current* critic actually inaccurate at all, and if
+so, in what way? No retraining required — just one forward pass per state
+plus an exact DP solve against the checkpoint already on disk.
+
+For every non-terminal state, it compares what `π_β`'s trained critic
+currently predicts against the *exact* true value of `π_β` under its own
+policy — computed via exact policy evaluation
+(`reference.experience_optimal.compute_true_value_of_policy`, the same
+kind of true-dynamics DP solve used for `π_D*`'s true-restricted
+definition, but evaluating `π_β`'s actual action probabilities at every
+state instead of taking a max over actions).
+
+|  | n | mean abs error | mean signed error | correlation |
+|---|---|---|---|---|
+| all states | 887 | 0.470 | +0.042 | 0.591 |
+| covered by `D` | 351 | 0.290 | **+0.254** | 0.846 |
+| uncovered by `D` | 536 | 0.589 | −0.097 | 0.392 |
+
+On the states that actually matter for GAE (the ones `D` covers), the
+critic overestimates by `+0.25` on average — substantial on a scale where
+typical returns sit around `0` to `1`.
+
+<img src="results/analysis/critic_accuracy/critic_accuracy_scatter.svg" width="55%">
+
+The scatter reveals a specific, interpretable failure, not generic noise:
+a horizontal band at `true_value ≈ −1.0` (states from which `π_β`'s actual
+policy leads almost certainly into a hazard on the next step) where the
+critic's predictions range wildly — from far below to well above the true
+value — while everywhere else the fit tracks the `y=x` line reasonably
+well (covered-state correlation `0.846`). The critic has a specific blind
+spot for near-certain-death states, not a uniformly noisy estimate
+everywhere.
+
+**This confirms the "stale/inaccurate critic" premise directly**, rather
+than only inferring it from `gae_lambda`'s downstream effect — but it does
+not, by itself, distinguish capacity from undertraining as the cause,
+since either could produce this pattern. Our reading leans toward
+undertraining: `π_β` only reached ~35% success before being frozen, and
+states this close to near-certain death are plausibly rare in its own
+collected experience, giving the critic little signal to learn from
+regardless of how much capacity it has. **H6 is deprioritized on this
+basis** — not because capacity is proven sufficient, but because the more
+directly implicated explanation (sparse exposure to specific dangerous
+states during `π_β`'s own training) points at training exposure, not
+network size.
+
 ### Next steps
 
 Of the seven native PPO hyperparameter groups, six are now closed:
@@ -873,20 +926,15 @@ Of the seven native PPO hyperparameter groups, six are now closed:
 sitting almost exactly on the default). Only `minibatch_size` (the
 remaining H7 field) is untested.
 
-**H6 (`hidden_sizes`) is under discussion, not a closed decision.** The
-case for dropping it: the ground-truth state space here is small (900
-states) and the observation is 8-dimensional — a two-layer `64×64` MLP is
-substantial capacity relative to that, and network capacity is rarely the
-bottleneck for problems this size in typical RL practice. Against
-dropping it: that's an assumption this project hasn't actually tested,
-and it's the one remaining hypothesis that could affect `π_β`'s critic
-*accuracy itself* — upstream of everything `gae_lambda`'s results turned
-out to hinge on — rather than just the fixed-D update mechanism everything
-else tested operates on. Unresolved for now.
+**H6 (`hidden_sizes`) is deprioritized**, on the basis of the critic
+accuracy diagnostic above: the critic's inaccuracy looks more like an
+undertraining pattern (sparse exposure to rare, dangerous states) than a
+capacity ceiling, and confirming that properly would cost a full new
+prior/`D`/`π_D*` cycle. Not proven closed — just no longer the natural
+next step.
 
-`minibatch_size` is the natural next test regardless of how H6 is
-resolved: closes H7 fully, a single-field change, no architecture change
-required.
+`minibatch_size` is the natural next test: closes H7 fully, a
+single-field change, no architecture change required.
 
 
 ## Project structure
