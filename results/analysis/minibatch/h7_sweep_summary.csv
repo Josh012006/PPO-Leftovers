@@ -1,0 +1,5 @@
+minibatch_size,prefix,best,mean,std,final,csv_path,status
+64,mb_clip_0_3_ent_0_01_gae_0_90_mb_64,0.954,0.9067213114754099,0.08489918161119908,0.946,results\analysis\minibatch\mb_clip_0_3_ent_0_01_gae_0_90_mb_64.csv,ran
+128,mb_clip_0_3_ent_0_01_gae_0_90_mb_128,0.95,0.9068524590163936,0.08540059251659671,0.946,results\analysis\minibatch\mb_clip_0_3_ent_0_01_gae_0_90_mb_128.csv,ran
+512,mb_clip_0_3_ent_0_01_gae_0_90_mb_512,0.952,0.895049180327869,0.09363304726955972,0.918,results\analysis\minibatch\mb_clip_0_3_ent_0_01_gae_0_90_mb_512.csv,ran
+1024,mb_clip_0_3_ent_0_01_gae_0_90_mb_1024,0.952,0.8699999999999999,0.11663961591157614,0.918,results\analysis\minibatch\mb_clip_0_3_ent_0_01_gae_0_90_mb_1024.csv,ran
