@@ -903,6 +903,58 @@ with by default anyway.
 **Best configuration remains unchanged: `clip_eps=0.3`, `entropy_coef=0.01`,
 `gae_lambda=0.90`, `lr=0.0003`** — best `0.954`, mean `0.908`.
 
+### Minibatch size sweep (H7, minibatch_size ∈ {64, 128, 256, 512, 1024}, clip_eps=0.3, entropy_coef=0.01, gae_lambda=0.90)
+
+The last H7 field. `minibatch_size` controls how many gradient steps
+happen per epoch (~525K transitions / `minibatch_size`), not their size —
+a different mechanism from `lr`, but with a familiar-looking result on
+one side of it:
+
+<div align="center">
+
+| minibatch_size | best | mean | std | epoch-5 | dips (<0.8)/61 |
+|---|---|---|---|---|---|
+| 64 (0.25×) | 0.954 | 0.907 | **0.085** | 0.900 | **3** |
+| 128 (0.5×) | 0.950 | 0.907 | **0.085** | 0.898 | **3** |
+| 256 (previous reference) | 0.954 | 0.908 | 0.090 | 0.898 | 4 |
+| 512 (2×) | 0.952 | 0.895 | 0.094 | 0.630 | 5 |
+| 1024 (4×) | 0.952 | 0.870 | 0.117 | 0.364 | 9 |
+
+</div>
+
+`minibatch_size=1024` shows the same slow-start signature already seen at
+low `lr`: `epoch-5=0.364` versus the reference's `0.898`. The mechanism is
+different but the outcome is the same — 4× fewer gradient steps per epoch
+means genuinely less optimization work happens within the fixed
+300-epoch budget, not a subtler form of instability. `512` shows a milder
+version of the same pattern. `64` and `128` (more, individually noisier
+steps) give a small but consistent stability improvement instead — lower
+`std`, fewer deep dips, and visibly flatter through the second half of
+training:
+
+<table width="100%">
+<tr>
+<td width="50%"><img src="results/analysis/minibatch/mb_clip_0_3_ent_0_01_gae_0_90_mb_1024_success_return.svg" width="100%"><br><em>minibatch_size=1024 — slow start (epoch-5=0.364) and the widest, most frequent dips of the sweep.</em></td>
+<td width="50%"><img src="results/analysis/minibatch/mb_clip_0_3_ent_0_01_gae_0_90_mb_64_success_return.svg" width="100%"><br><em>minibatch_size=64 — same fast start as the reference, but visibly flatter from ~epoch 150 onward.</em></td>
+</tr>
+</table>
+
+**`minibatch_size` is a stability tool, not a ceiling tool.** Its best
+observed value never exceeds what was already found elsewhere (`0.954`)
+— its effect is on how consistently a near-ceiling region is *held onto*
+during a run, not on reaching a higher one.
+
+**New reference configuration: `clip_eps=0.3`, `entropy_coef=0.01`,
+`gae_lambda=0.90`, `minibatch_size=64`** — best `0.954` (unchanged), mean
+`0.907` (essentially unchanged from `256`'s `0.908`), `std=0.085` (down
+from `0.090`). A real but minor improvement, not a breakthrough — adopted
+as the new reference mainly because there's no reason not to.
+
+**H7 is now fully closed**: `max_grad_norm` (modest main effect, no
+interaction with `value_coef`), `lr` (narrow optimum at the default), and
+`minibatch_size` (mild stability tool — smaller is slightly better,
+larger is clearly worse).
+
 ### Critic accuracy diagnostic (informing H6)
 
 Testing H6 (`hidden_sizes`) properly requires a new prior checkpoint —
@@ -964,14 +1016,6 @@ network size.
 
 ### Next steps
 
-Of the seven native PPO hyperparameter groups, six are now closed:
-`epochs` (H4, partial factor), `clip_eps` (H3, real effect), `entropy_coef`
-(H5, amplitude only), `gae_lambda` (H2, the strongest effect found),
-`value_coef` (H1, no effect, confirmed via cross sweep), `max_grad_norm`
-(H7, modest main effect, no interaction), and now `lr` (H7, narrow optimum
-sitting almost exactly on the default). Only `minibatch_size` (the
-remaining H7 field) is untested.
-
 **H6 (`hidden_sizes`) is deprioritized**, on the basis of the critic
 accuracy diagnostic above: the critic's inaccuracy looks more like an
 undertraining pattern (sparse exposure to rare, dangerous states) than a
@@ -979,8 +1023,55 @@ capacity ceiling, and confirming that properly would cost a full new
 prior/`D`/`π_D*` cycle. Not proven closed — just no longer the natural
 next step.
 
-`minibatch_size` is the natural next test: closes H7 fully, a
-single-field change, no architecture change required.
+## Where we are at
+
+A synthesis, not a new result — worth stating plainly before deciding
+what comes next.
+
+**Hyperparameter tuning alone has closed most of the exploitation gap.**
+Standard PPO with the field's own textbook defaults reached
+`success_rate=65.0%` against this same `D` and `π_D*` ceiling (see
+"Baseline run" above; that number was evaluated under a different seed
+than the sweeps below — see "A note on eval seeds" — but the swing here
+is roughly 30 percentage points, far larger than the ~2pp noise seen
+between seeds anywhere else in this document, so the comparison is robust
+regardless). After systematically testing six of the seven native PPO
+hyperparameter groups — `clip_eps` (H3), `entropy_coef` (H5), `gae_lambda`
+(H2, by far the strongest single effect), `value_coef` (H1, no effect),
+and all of H7 (`max_grad_norm`, `lr`, `minibatch_size`) — the best
+configuration found (`clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.90`,
+`minibatch_size=64`, everything else at its default) reaches
+`success_rate=95.4%`. That's roughly 30 percentage points of the
+exploitation gap closed by hyperparameter selection alone.
+
+None of this is a new empirical finding — it is the expected consequence
+of doing a careful, systematic hyperparameter search, applied here more
+thoroughly than this step usually gets in practice. That is precisely the
+point of documenting it this plainly: a properly-tuned baseline is not
+optional context for judging what is left to explain — it changes the
+number that needs explaining by a large amount.
+
+**The residual gap is now small: `95.4%` vs. `π_D*`'s `99.2%` — about
+`0.04`.** Every hyperparameter tested, `gae_lambda` aside, has shown
+either no effect or a modest one; nothing found so far explains this
+remaining gap. Whether it is worth pursuing further is a judgment call —
+our working speculation is that for an environment this small and this
+uncomplicated, closing a gap this size here may matter more than the raw
+number suggests: if this same fixed-D mechanism is later applied to
+environments where the ceiling itself is harder to reach, a residual
+inefficiency this well-isolated could be the difference between a
+mechanism that scales cleanly and one that does not — in a way a
+30-point gap never would have revealed.
+
+**Next: changes that go beyond hyperparameter selection** — to PPO's
+mechanism itself, not just its dials (the deliberate divergences already
+noted in "Further analyses" below are exactly this kind of change).
+Before picking one, the natural first step is understanding precisely
+*where* the remaining `~0.04` comes from: what specifically differs
+between `π_D*`'s policy and the best configuration's policy, state by
+state, rather than only knowing the aggregate gap exists — the same kind
+of diagnostic the critic-accuracy check above did for `π_β`'s critic, now
+aimed at the policy gap itself.
 
 
 ## Project structure
