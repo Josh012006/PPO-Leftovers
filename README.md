@@ -54,11 +54,15 @@ property of how `D` was collected and is held fixed throughout.
 
 **Terminology, kept strictly distinct throughout the codebase:**
 
+<div align="center">
+
 | Term | Means | Does NOT mean |
 |---|---|---|
 | Exploitation *frequency* | how often the agent acts greedily w.r.t. its current policy (e.g. deterministic/mode action at eval time) | how *good* that greedy behavior actually is |
 | Exploitation *quality* | how much of the value latent in `D` the learned policy actually recovers | how deterministic the policy is |
 | Optimization | the mechanical process of updating θ to improve the PPO objective | value estimation |
+
+</div>
 
 A policy can be 100% "exploitative" in the frequency sense (always takes
 its best-known action) while still being very bad at exploitation in the
@@ -288,6 +292,8 @@ The exploitation gap could come from the value/advantage-estimation side or
 the policy-optimization side. Every field below is a YAML-reachable knob in
 `configs/ppo_fixed_d_*.yaml` — no code changes needed to test any of these:
 
+<div align="center">
+
 | # | Hypothesis | Config field(s) |
 |---|---|---|
 | H1 | Critic doesn't accurately represent the information in `D` | network capacity, `value_coef` |
@@ -297,6 +303,8 @@ the policy-optimization side. Every field below is a YAML-reachable knob in
 | H5 | Entropy regularization prevents deterministic exploitation | `entropy_coef` |
 | H6 | Policy network lacks capacity | `hidden_sizes` |
 | H7 | Optimization hyperparameters (lr, minibatch size, grad clipping) limit convergence | `lr`, `minibatch_size`, `max_grad_norm` |
+
+</div>
 
 `configs/ppo_fixed_d_modified.yaml` ships as a worked example testing H4
 (`epochs: 10 → 30`) with every other field held identical to the standard
@@ -421,6 +429,8 @@ live-rollout number is used in any gap arithmetic.
 **Live-rollout results** (500 episodes, `--eval-seed 999`, identical
 protocol for every policy):
 
+<div align="center">
+
 | policy | mean_return | success_rate | mean_length | gap vs π_D\*_empirical (return / success) |
 |---|---|---|---|---|
 | prior `π_β` | −1.544 ± 0.032 | 31.0% ± 2.1pp | 181.7 | +1.650 / +67.2pp |
@@ -428,6 +438,8 @@ protocol for every policy):
 | `π_D*` true-restricted | 0.109 ± 0.013 | 98.4% ± 0.6pp | 88.5 | −0.003 / −0.2pp |
 | standard PPO | −0.894 ± 0.039 | 65.0% ± 2.1pp | 151.3 | +1.000 / +33.2pp |
 | modified PPO (epochs=30, a first try) | −0.883 ± 0.037 | 64.4% ± 2.1pp | 148.4 | +0.989 / +33.8pp |
+
+</div>
 
 **Interpretation.**
 
@@ -505,7 +517,7 @@ about how the update mechanism could be made to preserve its own best
 intermediate result, not just its final one — see "Further analyses"
 below.
 
-<table>
+<table width="100%">
 <tr>
 <td width="50%"><img src="results/analysis/success_return_clip_0_2.svg" width="100%"><br><em>success_rate &amp; mean_return vs. epoch, clip_eps=0.2. Dashed/dotted/dash-dot lines mark the prior, the exact π_D* ceiling, and this run's best observed success_rate.</em></td>
 <td width="50%"><img src="results/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2. clip_frac never approaches saturation; entropy falls then climbs again well after the oscillation begins.</em></td>
@@ -519,7 +531,7 @@ was re-run at `clip_eps=0.1`, `0.3`, and `0.4` (in addition to `0.2`
 above), everything else identical, to see how much of the ceiling
 `clip_eps` itself is responsible for:
 
-<table>
+<table width="100%">
 <tr>
 <td width="50%"><img src="results/analysis/success_return_clip_0_1.svg" width="100%"><br><em>clip_eps=0.1 — best observed: 0.674 (epoch 15), mean over the run: 0.376</em></td>
 <td width="50%"><img src="results/analysis/success_return_clip_0_2.svg" width="100%"><br><em>clip_eps=0.2 — best observed: 0.914 (epoch 35), mean over the run: 0.735</em></td>
@@ -565,7 +577,7 @@ learning-rate schedules) might be worth exploring, rather than treating it
 as a single fixed value for an entire window — added to "Further
 analyses" below.
 
-<table>
+<table width="100%">
 <tr>
 <td width="50%"><img src="results/analysis/clip_entropy_clip_0_1.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.1</em></td>
 <td width="50%"><img src="results/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2</em></td>
@@ -598,6 +610,8 @@ reading.
 Same 300-epoch protocol, `clip_eps` fixed at the best setting found above
 (`0.3`), `entropy_coef` swept across two orders of magnitude:
 
+<div align="center">
+
 | entropy_coef | best | mean | std | final entropy | final clip_frac |
 |---|---|---|---|---|---|
 | 0.0 | 0.948 | 0.877 | 0.115 | 0.357 | 0.206 |
@@ -605,6 +619,8 @@ Same 300-epoch protocol, `clip_eps` fixed at the best setting found above
 | **0.01 (default)** | **0.950** | **0.881** | 0.099 | 0.441 | 0.267 |
 | 0.03 | 0.946 | 0.876 | 0.099 | 0.546 | 0.357 |
 | 0.1 | 0.938 | 0.881 | 0.080 | 0.827 | 0.471 |
+
+</div>
 
 **`entropy_coef` does not shorten the gap.** Best success_rate stays within
 `[0.938, 0.950]` and mean within `[0.875, 0.881]` across the whole
@@ -617,7 +633,7 @@ then a smooth plateau) rather than continuing to swing sharply —
 run. `entropy_coef` acts as a damper on the oscillation, not a fix for
 whatever causes it.
 
-<table>
+<table width="100%">
 <tr>
 <td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_0_success_return.svg" width="100%"><br><em>entropy_coef=0.0 — repeated deep dives persist through epoch 300</em></td>
 <td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_1_success_return.svg" width="100%"><br><em>entropy_coef=0.1 — one early dip, then a stable plateau from ~epoch 50 on</em></td>
@@ -647,6 +663,8 @@ Same 300-epoch protocol, `clip_eps=0.3` and `entropy_coef=0.01` now both
 held at their best settings, `gae_lambda` swept across its full valid
 range:
 
+<div align="center">
+
 | gae_lambda | best | mean | std |
 |---|---|---|---|
 | 0.0 | 0.348 | 0.030 | 0.043 |
@@ -654,6 +672,8 @@ range:
 | **0.90** | **0.954** | **0.908** | 0.090 |
 | 0.95 (previous best) | 0.950 | 0.881 | 0.099 |
 | 1.0 | 0.926 | 0.757 | 0.172 |
+
+</div>
 
 This is the sharpest result of any sweep so far — a qualitative failure,
 not just a shift in oscillation amplitude. At `gae_lambda ∈ {0.0, 0.5}`,
@@ -674,7 +694,7 @@ noise away. `gae_lambda=0.90` lands in between and is the best config
 found in this project so far on both axes at once — higher ceiling *and*
 lower variance than the `0.95` default.
 
-<table>
+<table width="100%">
 <tr>
 <td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_0_success_return.svg" width="100%"><br><em>gae_lambda=0.0 — collapses within ~5 epochs, never recovers</em></td>
 <td width="50%"><img src="results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_90_success_return.svg" width="100%"><br><em>gae_lambda=0.90 — new best: highest ceiling, lowest variance yet</em></td>
@@ -695,6 +715,8 @@ hyperparameter tested so far has.
 Narrowing around the new best point rather than trusting a single sampled
 value:
 
+<div align="center">
+
 | gae_lambda | best | mean | std |
 |---|---|---|---|
 | 0.80 | 0.954 | 0.882 | 0.092 |
@@ -703,6 +725,8 @@ value:
 | 0.93 | 0.952 | 0.902 | **0.087** |
 | 0.95 | 0.950 | 0.881 | 0.099 |
 | 0.97 | 0.952 | 0.857 | 0.139 |
+
+</div>
 
 `best` is essentially flat across the whole range (`0.950`–`0.954`) — this
 refinement didn't uncover a sharper peak, it confirmed the wide sweep had
@@ -716,7 +740,9 @@ repeated seeds, so the precise ordering among `{0.85, 0.90, 0.93}` (a 1–3
 percentage-point spread on mean) shouldn't be read as more than "this is
 a good, fairly wide plateau" — not "`0.90` is optimal to the decimal."
 
+<div align="center">
 <img src="results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_97_success_return.svg" width="50%"><br><em>gae_lambda=0.97 — deeper, more frequent dips than 0.90, foreshadowing the collapse seen at 1.0.</em>
+</div>
 
 **Confirmed best configuration: `clip_eps=0.3`, `entropy_coef=0.01`,
 `gae_lambda=0.90`** — sits inside a broad, stable plateau rather than on a
@@ -737,6 +763,8 @@ recomputed from the trainable one), the only channel left for
 `value_loss` could in principle dominate it and shrink the policy's own
 gradient step:
 
+<div align="center">
+
 | value_coef | best | mean | std |
 |---|---|---|---|
 | 0.0 | 0.954 | 0.901 | 0.094 |
@@ -744,6 +772,8 @@ gradient step:
 | 0.25 | 0.954 | 0.906 | 0.089 |
 | 0.5 (default) | 0.954 | 0.908 | 0.090 |
 | 1.0 | 0.952 | 0.907 | 0.088 |
+
+</div>
 
 **Flat, in every column, across the full range.** `best` varies by at most
 `0.002` (checkpoint-timing noise, not signal), `mean` by one percentage
@@ -779,11 +809,15 @@ cartesian product automatically — see `configs/ppo_fixed_d_h7_sweep.yaml`)
 tests the specific remaining possibility: does a *tighter* `max_grad_norm`
 surface the interference a looser one couldn't?
 
+<div align="center">
+
 | value_coef ＼ max_grad_norm | 0.1 | 0.5 | 1.0 |
 |---|---|---|---|
 | **0.0** | 0.946 / 0.894 / 0.085 | 0.954 / 0.901 / 0.094 | 0.954 / 0.892 / 0.097 |
 | **0.5** | 0.952 / 0.899 / 0.085 | 0.954 / 0.908 / 0.090 | 0.952 / 0.902 / 0.087 |
 | **1.0** | 0.952 / 0.894 / 0.086 | 0.952 / 0.907 / 0.088 | 0.952 / 0.897 / 0.095 |
+
+</div>
 
 *(each cell: best / mean / std)*
 
@@ -798,7 +832,9 @@ same envelope (below). This closes H1 with more confidence than the
 single-axis sweep alone: not just "no effect found," but "no effect found
 even where it was specifically sought."
 
+<div align="center">
 <img src="results/analysis/h7/h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_1_success_return.svg" width="60%"><br><em>value_coef=1.0, max_grad_norm=0.1 — compare against the value_coef=0.0 run at the same max_grad_norm (README text above): same four dips, same envelope.</em>
+</div>
 
 A smaller, secondary finding sits independent of `value_coef`:
 `max_grad_norm=0.5` (the current default) gives the highest `mean` in
@@ -819,6 +855,8 @@ qualitative swings.
 The last single-field H7 test before `minibatch_size`: does moving `lr`
 away from the standard `3e-4` default open up any of the remaining gap?
 
+<div align="center">
+
 | lr | best | mean | std | epoch-5 | dips (<0.8)/61 |
 |---|---|---|---|---|---|
 | `3e-05` (0.1×) | 0.920 | 0.801 | 0.198 | 0.182 | 17 |
@@ -826,6 +864,8 @@ away from the standard `3e-4` default open up any of the remaining gap?
 | **`0.0003` (default)** | **0.954** | **0.908** | **0.090** | 0.898 | **4** |
 | `0.001` (3.3×) | 0.952 | 0.882 | 0.095 | 0.898 | 5 |
 | `0.003` (10×) | 0.928 | 0.693 | 0.208 | 0.912 | 38 |
+
+</div>
 
 **The default wins on every metric at once.** Moving `lr` by 3× in either
 direction already measurably hurts; by 10×, both directions are clearly
@@ -846,7 +886,7 @@ run found in this entire project (`std=0.208`, exceeding even
 `gae_lambda=1.0`'s `0.172`), including a drop back toward the prior's own
 level around epoch 190.
 
-<table>
+<table width="100%">
 <tr>
 <td width="50%"><img src="results/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_3eneg05_success_return.svg" width="100%"><br><em>lr=3e-05 — slow to get going; much of the 300-epoch budget spent below its own eventual plateau.</em></td>
 <td width="50%"><img src="results/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_0_003_success_return.svg" width="100%"><br><em>lr=0.003 — gets there fast, cannot stay; the most chaotic run found in this project.</em></td>
@@ -882,17 +922,23 @@ kind of true-dynamics DP solve used for `π_D*`'s true-restricted
 definition, but evaluating `π_β`'s actual action probabilities at every
 state instead of taking a max over actions).
 
+<div align="center">
+
 |  | n | mean abs error | mean signed error | correlation |
 |---|---|---|---|---|
 | all states | 887 | 0.470 | +0.042 | 0.591 |
 | covered by `D` | 351 | 0.290 | **+0.254** | 0.846 |
 | uncovered by `D` | 536 | 0.589 | −0.097 | 0.392 |
 
+</div>
+
 On the states that actually matter for GAE (the ones `D` covers), the
 critic overestimates by `+0.25` on average — substantial on a scale where
 typical returns sit around `0` to `1`.
 
+<div align="center">
 <img src="results/analysis/critic_accuracy/critic_accuracy_scatter.svg" width="55%">
+</div>
 
 The scatter reveals a specific, interpretable failure, not generic noise:
 a horizontal band at `true_value ≈ −1.0` (states from which `π_β`'s actual
@@ -1171,3 +1217,55 @@ this is implemented yet.
   tightening late) might capture the reach of a wide clip without its
   instability. Not known whether this is already standard practice
   elsewhere; worth checking before implementing.
+
+
+  ## Literature
+
+Papers this project's design or discussion draws on directly — not a
+general reading list, only what's actually behind a specific decision or
+claim made above.
+
+**Motivating paper**
+
+- Berseth, G. (2025). *Is Exploration or Optimization the Problem for Deep
+  Reinforcement Learning?* arXiv:2508.01329.
+  [arxiv.org/pdf/2508.01329](https://arxiv.org/pdf/2508.01329) — introduces
+  the experience-optimal policy and practical sub-optimality concepts this
+  project's entire decomposition is built on. See "Motivating paper" and
+  "Relationship to the motivating paper" above for exactly how this
+  project adapts it.
+
+**Core algorithm and methods used directly**
+
+- Schulman, J., Wolski, F., Dhariwal, P., Radford, A., & Klimov, O. (2017).
+  *Proximal Policy Optimization Algorithms.* arXiv:1707.06347.
+  [arxiv.org/abs/1707.06347](https://arxiv.org/abs/1707.06347) — the
+  algorithm this whole project studies. Its Atari/MuJoCo hyperparameter
+  tables (`K=3` vs. `K=10` epochs) are the reference point for how far
+  this project's epoch-count analysis (H4) pushes beyond conventional
+  usage.
+- Schulman, J., Moritz, P., Levine, S., Jordan, M., & Abbeel, P. (2015).
+  *High-Dimensional Continuous Control Using Generalized Advantage
+  Estimation.* arXiv:1506.02438 (ICLR 2016).
+  [arxiv.org/abs/1506.02438](https://arxiv.org/abs/1506.02438) — defines
+  the GAE formula (`gae_lambda`'s bias/variance trade-off) this project's
+  `FixedDPPOTrainer` implements directly, and whose `λ→0` vs. `λ→1`
+  behavior is the basis for the entire "GAE lambda sweep" analysis.
+- Kingma, D. P., & Ba, J. (2015). *Adam: A Method for Stochastic
+  Optimization.* arXiv:1412.6980 (ICLR 2015).
+  [arxiv.org/abs/1412.6980](https://arxiv.org/abs/1412.6980) — the
+  optimizer used throughout every trainer in this project
+  (`torch.optim.Adam`); its per-parameter moment estimates were relevant
+  to reasoning about the `value_coef` / shared-gradient-clipping question.
+
+**Implementation verification reference**
+
+- Raffin, A., Hill, A., Gleave, A., Kanervisto, A., Ernestus, M., &
+  Dormann, N. (2021). *Stable-Baselines3: Reliable Reinforcement Learning
+  Implementations.* Journal of Machine Learning Research, 22(268), 1–8.
+  [jmlr.org/papers/v22/20-1364.html](https://jmlr.org/papers/v22/20-1364.html)
+  — this project's single combined loss / single optimizer / single
+  global `clip_grad_norm_` pattern (see "Value coefficient sweep") was
+  checked directly against SB3's reference PPO implementation, confirming
+  it matches standard practice rather than being a project-specific
+  deviation.
