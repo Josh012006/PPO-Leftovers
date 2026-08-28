@@ -10,6 +10,7 @@ the core research library.
 """
 from __future__ import annotations
 
+import copy
 import pickle
 from pathlib import Path
 
@@ -18,6 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
 
 from ppo_exploitation.eval.evaluate import evaluate_policy, make_neural_act_fn, make_tabular_act_fn
 from ppo_exploitation.ppo.fixed_d_trainer import FixedDPPOTrainer
@@ -130,6 +132,7 @@ def run_single_analysis(
     title_suffix: str = "",
     verbose: bool = True,
     log_prefix: str = "",
+    save_best_checkpoint_path: Path | None = None,
 ) -> dict:
     """Runs one fixed-D training + periodic-eval sweep for a single
     PPOHyperparams config. Saves `<prefix>.csv`, `<prefix>_success_return
@@ -140,11 +143,28 @@ def run_single_analysis(
     `log_prefix` is prepended to every per-epoch print line -- used by
     analyze_h7.py to make clear, in a long combined log, which grid
     combination a given line belongs to.
+
+    `save_best_checkpoint_path`, if given, tracks the network state at
+    whichever epoch achieved the HIGHEST live eval success_rate during
+    training -- not just the final epoch -- and saves it (plus which
+    epoch/success_rate it came from) to that path. This matters because
+    fixed-D training here is not monotonic (see README, "Epoch-count
+    ceiling analysis"): the final epoch is not reliably the best one, and
+    no earlier script in this project persists a trained network at all
+    (only the CSV/plots of its trajectory) -- this is the first place that
+    gap is closed, needed by scripts/analyze_policy_agreement.py.
     """
     trainer = FixedDPPOTrainer(
         dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg, prior_state_dict=prior_state_dict
     )
     rows: list[dict] = []
+    best_tracker = {"success_rate": -1.0, "epoch": None, "state_dict": None}
+
+    def maybe_track_best(epoch: int, net, success_rate: float):
+        if save_best_checkpoint_path is not None and success_rate > best_tracker["success_rate"]:
+            best_tracker["success_rate"] = success_rate
+            best_tracker["epoch"] = epoch
+            best_tracker["state_dict"] = copy.deepcopy(net.state_dict())
 
     def live_eval(net) -> dict:
         return evaluate_policy(eval_env, make_neural_act_fn(net, deterministic=True), eval_episodes, seed=eval_seed)
@@ -162,6 +182,7 @@ def run_single_analysis(
             "entropy": entropy0,
         }
     )
+    maybe_track_best(0, trainer.net, res0["success_rate"])
     if verbose:
         print(
             f"{log_prefix}[epoch    0] success_rate={res0['success_rate']:.3f}\u00b1{res0['success_rate_stderr']:.3f} "
@@ -181,6 +202,7 @@ def run_single_analysis(
                 "entropy": summary["entropy"],
             }
         )
+        maybe_track_best(epoch, net, res["success_rate"])
         if verbose:
             print(
                 f"{log_prefix}[epoch {epoch:4d}] success_rate={res['success_rate']:.3f}\u00b1{res['success_rate_stderr']:.3f} "
@@ -208,6 +230,24 @@ def run_single_analysis(
         f"clip_frac & entropy vs. epoch ({title_suffix or prefix})",
     )
 
+    if save_best_checkpoint_path is not None:
+        torch.save(
+            {
+                "state_dict": best_tracker["state_dict"],
+                "epoch": best_tracker["epoch"],
+                "success_rate": best_tracker["success_rate"],
+                "obs_dim": dataset.obs_dim,
+                "n_actions": dataset.n_actions,
+                "hidden_sizes": cfg.hidden_sizes,
+            },
+            save_best_checkpoint_path,
+        )
+        if verbose:
+            print(
+                f"{log_prefix}Saved best-observed checkpoint (epoch {best_tracker['epoch']}, "
+                f"success_rate={best_tracker['success_rate']:.3f}) to {save_best_checkpoint_path}"
+            )
+
     return {
         "prefix": prefix,
         "best": achieved_best,
@@ -215,4 +255,5 @@ def run_single_analysis(
         "std": float(df["success_rate"].std()),
         "final": float(df.iloc[-1]["success_rate"]),
         "csv_path": str(csv_path),
+        "best_checkpoint_epoch": best_tracker["epoch"],
     }

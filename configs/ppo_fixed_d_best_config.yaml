@@ -1,0 +1,22 @@
+# The best configuration found across every H1-H7 sweep so far (see
+# README, "Where we are at"): clip_eps=0.3, entropy_coef=0.01,
+# gae_lambda=0.90, minibatch_size=64, everything else at its default.
+# Used by scripts/analyze_policy_agreement.py to retrain this exact
+# configuration (deterministic given the same D/pi_beta/seed) while
+# tracking its best-observed live checkpoint, not just the final epoch.
+
+epochs: 300
+minibatch_size: 64
+
+clip_eps: 0.3
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
