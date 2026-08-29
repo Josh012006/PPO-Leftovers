@@ -1073,7 +1073,7 @@ state, rather than only knowing the aggregate gap exists — the same kind
 of diagnostic the critic-accuracy check above did for `π_β`'s critic, now
 aimed at the policy gap itself.
 
-## Policy agreement: where do `π_D*` and our best config actually disagree?
+<!-- ## Policy agreement: where do `π_D*` and our best config actually disagree?
 
 `scripts/analyze_policy_agreement.py` retrains the best configuration
 (`clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.90`,
@@ -1206,7 +1206,7 @@ is not "PPO's update rule is somehow miscalibrated everywhere." It is a
 property of *how* PPO's function-approximation mechanism handles
 low-density regions of experience, concentrated on an identifiable,
 small subset of states, staying inside this project's own research
-question rather than answering an adjacent one.
+question rather than answering an adjacent one. -->
 
 
 ## Project structure
