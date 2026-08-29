@@ -12,18 +12,81 @@ from __future__ import annotations
 
 import copy
 import pickle
+from collections import deque
 from pathlib import Path
 
 import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 import torch
 
 from ppo_exploitation.eval.evaluate import evaluate_policy, make_neural_act_fn, make_tabular_act_fn
 from ppo_exploitation.ppo.fixed_d_trainer import FixedDPPOTrainer
 from ppo_exploitation.utils.config import PPOHyperparams
+
+
+# --------------------------------------------------------------------------
+# Maze-graph BFS distance -- shared by every script that needs a purely
+# structural (policy-independent) notion of "how far is state s from X"
+# (a hazard, the start, the goal), respecting the maze's actual walls via
+# `env.layout.open_walls`. Previously duplicated in
+# scripts/analyze_masked_pi_d_star.py; centralized here after that
+# duplication became a real maintenance risk once a second script needed
+# the same logic for a different source (start/goal, not just hazards).
+# --------------------------------------------------------------------------
+def bfs_distance_from(env, source_cells: list[tuple[int, int]]) -> dict[int, int]:
+    """BFS distance (maze-graph hops) from every reachable state to the
+    nearest of `source_cells` (a list of (row, col) tuples). States not
+    reachable from any source are absent from the returned dict."""
+    from ppo_exploitation.envs.stochastic_maze import ACTIONS, _ACTION_DELTA
+
+    layout = env.layout
+    dist: dict[int, int] = {}
+    frontier: deque = deque()
+    for (r, c) in source_cells:
+        sid = layout.state_id(r, c)
+        dist[sid] = 0
+        frontier.append(sid)
+    while frontier:
+        s = frontier.popleft()
+        r, c = layout.rc(s)
+        for d in ACTIONS:
+            if not layout.open_walls[r, c, d]:
+                continue
+            dr, dc = _ACTION_DELTA[d]
+            nr, nc = r + dr, c + dc
+            ns = layout.state_id(nr, nc)
+            if ns not in dist:
+                dist[ns] = dist[s] + 1
+                frontier.append(ns)
+    return dist
+
+
+def hazard_bfs_distance(env) -> dict[int, int]:
+    return bfs_distance_from(env, list(env.layout.hazards))
+
+
+def start_bfs_distance(env) -> dict[int, int]:
+    return bfs_distance_from(env, [env.layout.start])
+
+
+def goal_bfs_distance(env) -> dict[int, int]:
+    return bfs_distance_from(env, [env.layout.goal])
+
+
+def local_connectivity(env) -> dict[int, int]:
+    """Number of open walls (0-4) at each state -- a purely structural
+    measure of how many alternative routes exist locally. Low connectivity
+    means fewer ways to recover from a wrong turn near this state."""
+    layout = env.layout
+    out: dict[int, int] = {}
+    for s in range(env.n_states):
+        r, c = layout.rc(s)
+        out[s] = int(layout.open_walls[r, c].sum())
+    return out
 
 
 # --------------------------------------------------------------------------

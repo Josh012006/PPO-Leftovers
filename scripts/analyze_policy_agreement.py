@@ -1,61 +1,70 @@
-"""Where, exactly, does the best fixed-D PPO configuration's policy differ
-from pi_D*'s? For every non-terminal state, compares pi_D*'s exact action
-ranking (from its Q-values, no training noise) against the best fixed-D
-PPO configuration's ranking (from its policy logits) via Spearman rank
-correlation and simple argmax agreement, and cross-references both
-against whether pi_beta's own policy walks into near-certain death from
-that state.
+"""Where, exactly, does the best fixed-D PPO configuration's policy
+underperform pi_D*'s -- not just pick a different action, but actually
+get a worse expected return?
 
-By default (no --reuse-checkpoint), this RETRAINS the best configuration
-found so far (clip_eps=0.3, entropy_coef=0.01, gae_lambda=0.90,
-minibatch_size=64 -- configs/ppo_fixed_d_best_config.yaml), tracking the
-BEST live-eval checkpoint seen during training rather than only the final
-epoch (via scripts/_analysis_lib.py's save_best_checkpoint_path option --
-given how non-monotonic these runs are throughout this project, epoch 300
-is not reliably where the best policy actually was).
+A state counts as a DISAGREEMENT state if and only if BOTH hold (an AND,
+not either alone):
+  1. pi_D*'s greedy action at that state differs from the best-config
+     policy's greedy action.
+  2. The best-config policy's actual expected return from that state is
+     meaningfully BELOW pi_D*'s expected value there -- not just a
+     different-but-equally-good action.
 
-Pass --reuse-checkpoint <path to an already-saved *.pt from a previous run
-of this script> to SKIP retraining entirely and re-run just the
-comparison -- e.g. against pi_D*'s true-restricted definition instead of
-the empirical one (via --pi-d-star), to check whether a disagreement
-pattern found against the empirical definition survives once MLE sampling
-noise in the reference itself is removed (same visited (s,a) support,
-exact transition probabilities instead of D's estimated ones). This is
-the cheap way to ask "is this about D's coverage, or about noise in
-estimating probabilities over what D already covers" without retraining
-the same network twice.
+Condition 1 alone (argmax disagreement) doesn't imply a real problem: two
+actions can lead to statistically indistinguishable outcomes, especially
+near a fork with redundant paths. Condition 2 alone doesn't either: pi_D*
+could be visiting a state where its OWN value is unreliable (e.g. thin
+coverage). Requiring both is a stricter, more meaningful definition of
+"the two policies actually disagree in a way that costs something."
 
-Spearman rank correlation is implemented directly in numpy (ties handled
-by average rank, matching the standard convention) rather than adding a
-scipy dependency for this one function. Ties are common and expected on
-pi_D*'s side: every unvisited (s,a) pair at a given state collapses to
-the same unseen_penalty Q-value.
+IMPORTANT correctness point: pi_D*'s V(s) is DISCOUNTED (value iteration
+uses reference.yaml's gamma=0.99). Comparing it against an UNDISCOUNTED
+empirical return -- which is what evaluate_policy computes everywhere
+else in this project -- would silently reproduce exactly the discounted-
+vs-undiscounted mismatch this project has been careful to avoid since its
+first "Baseline run" (see README). So the best-config policy's expected
+return here is estimated as a DISCOUNTED return-to-go (same gamma), via
+direct Monte Carlo rollout starting from each state -- not the project's
+usual undiscounted mean_return metric. This is a deliberate, narrow
+exception for this one apples-to-apples comparison, not a change to how
+success/return is reported anywhere else.
 
-Also recomputes the critic-accuracy diagnostic's true_value(s) under
-pi_beta (reusing reference.experience_optimal.compute_true_value_of_policy
--- no need to have run scripts/analyze_critic_accuracy.py first).
+How the rollout-from-an-arbitrary-state works: `env.set_state(s)` already
+exists (used by the reference solver's own machinery) -- call
+`env.reset()` (clears the step counter), then `env.set_state(s)` to
+override the position, then `env.state_to_obs(s)` for the correct initial
+observation, then step normally. `--episodes-per-state` independent
+rollouts per state (freshly reseeded each time, so slip randomness
+differs) give both a mean discounted return and its standard error.
 
-Outputs, under --out-dir:
-  best_config_checkpoint.pt                    -- (only when retraining)
-                                                   the tracked best-observed
-                                                   network
+COST WARNING: this evaluates every one of ~887 non-terminal states with
+`--episodes-per-state` rollouts each (887 * episodes-per-state episodes
+total) -- no network training involved, but still a lot of environment
+steps. Lower --episodes-per-state for a faster, noisier pass; the
+per-state standard error in the output CSV tells you how much that
+costs. This is why this script is meant to be run locally, not repeatedly
+in a sandbox.
+
+Also computes (cheaply, no rollout needed) pi_beta's own critic accuracy
+at each state -- reusing reference.experience_optimal.compute_true_value_of_policy,
+same as scripts/analyze_critic_accuracy.py -- and saves it in the output
+CSV for a later diagnostic (critic error vs. disagreement severity),
+deliberately NOT plotted yet: see README, "Policy agreement" -- the
+mechanism connecting disagreement to any specific state property is
+being established first (scripts/analyze_disagreement_factors.py), before
+revisiting that specific plot.
+
+Outputs, under --out-dir (default results/analysis/policy_agreement/):
+  best_config_checkpoint.pt (only when retraining, i.e. no --reuse-checkpoint)
   best_config_retrain.csv / _success_return.svg / _clip_entropy.svg
-                                                 -- (only when retraining)
-                                                   the retrain's own
-                                                   trajectory
-  policy_agreement.csv                          -- per-state: covered,
-                                                   true_value_pi_beta,
-                                                   near_death, pi_d_star_
-                                                   action, best_config_
-                                                   action, argmax_agree,
-                                                   rank_correlation
-  policy_agreement_vs_critic_error.svg/png      -- scatter: critic abs
-                                                   error (x) vs. rank
-                                                   correlation (y)
-  policy_agreement_maze_map.svg/png             -- spatial map of the
-                                                   maze, each state colored
-                                                   by rank correlation,
-                                                   hazards/start/goal marked
+      (only when retraining)
+  policy_agreement.csv -- per state: covered, pi_d_star_V, pi_d_star_action,
+      best_config_action, argmax_disagree, rank_correlation,
+      ppo_discounted_return(+stderr), value_gap, is_disagreement,
+      severity, true_value_pi_beta, critic_pred_pi_beta, critic_abs_error
+  policy_agreement_maze_map.svg/png -- maze cell map colored by severity
+      (green = agree or no meaningful gap, red = disagree AND a real,
+      statistically-significant value gap)
 
 Usage (retrain, first run):
     python scripts/analyze_policy_agreement.py \
@@ -63,17 +72,20 @@ Usage (retrain, first run):
         --dataset results/dataset_D.pkl \
         --prior-checkpoint results/prior_checkpoint.pt \
         --pi-d-star results/pi_d_star_empirical.pkl \
+        --reference-config configs/reference.yaml \
         --best-config configs/ppo_fixed_d_best_config.yaml \
-        --checkpoint-every 5 --eval-episodes 500 --eval-seed 24680 \
+        --episodes-per-state 20 --eval-seed 24680 \
         --out-dir results/analysis/policy_agreement
 
-Usage (re-run against true-restricted pi_D*, reusing the checkpoint above):
+Usage (reuse an already-trained checkpoint, e.g. against true-restricted pi_D*):
     python scripts/analyze_policy_agreement.py \
         --env-config configs/env_maze.yaml \
         --dataset results/dataset_D.pkl \
         --prior-checkpoint results/prior_checkpoint.pt \
         --pi-d-star results/pi_d_star_true_restricted.pkl \
+        --reference-config configs/reference.yaml \
         --reuse-checkpoint results/analysis/policy_agreement/best_config_checkpoint.pt \
+        --episodes-per-state 20 --eval-seed 24680 \
         --out-dir results/analysis/policy_agreement_true_restricted
 """
 from __future__ import annotations
@@ -97,18 +109,16 @@ import torch
 from _analysis_lib import compute_ceiling_success_rate, run_single_analysis
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
+from ppo_exploitation.eval.evaluate import make_neural_act_fn
 from ppo_exploitation.ppo.networks import ActorCritic
 from ppo_exploitation.reference.experience_optimal import compute_true_value_of_policy
-from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams
+from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams, ReferenceConfig
 from ppo_exploitation.utils.seeding import set_global_seed
 
 
 def spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
     """Spearman rank correlation, ties handled by average rank -- plain
-    numpy, no scipy dependency for this one function. Returns NaN if
-    either side is fully tied (e.g. a state with all 4 actions unvisited
-    in D, giving pi_D* the same Q-value for every action -- undefined
-    correlation, not zero)."""
+    numpy, no scipy dependency for this one function."""
 
     def rankdata_avg(a: np.ndarray) -> np.ndarray:
         order = np.argsort(a, kind="mergesort")
@@ -132,40 +142,78 @@ def spearman_corr(x: np.ndarray, y: np.ndarray) -> float:
     return float(np.corrcoef(rx, ry)[0, 1])
 
 
+def discounted_rollout_from_state(env, act_fn, state: int, n_episodes: int, gamma: float, seed: int) -> tuple[float, float]:
+    """Mean and stderr of the DISCOUNTED return, over n_episodes
+    independent rollouts starting at `state` (via env.reset() +
+    env.set_state(state)), under `act_fn`. See module docstring for why
+    this must be discounted, not the project's usual undiscounted
+    mean_return."""
+    returns = []
+    for ep in range(n_episodes):
+        env.reset(seed=seed + ep)
+        env.set_state(state)
+        obs = env.state_to_obs(state)
+        done = False
+        g = 0.0
+        discount = 1.0
+        while not done:
+            action = act_fn(obs, state)
+            obs, reward, terminated, truncated, info = env.step(action)
+            state = info["state"]
+            g += discount * reward
+            discount *= gamma
+            done = terminated or truncated
+        returns.append(g)
+    arr = np.asarray(returns, dtype=np.float64)
+    mean = float(arr.mean())
+    stderr = float(arr.std(ddof=1) / np.sqrt(len(arr))) if len(arr) > 1 else 0.0
+    return mean, stderr
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-config", default="configs/env_maze.yaml")
     parser.add_argument("--dataset", default="results/dataset_D.pkl")
     parser.add_argument("--prior-checkpoint", default="results/prior_checkpoint.pt")
-    parser.add_argument(
-        "--pi-d-star",
-        default="results/pi_d_star_empirical.pkl",
-        help="Path to either the empirical or true-restricted pi_D* pickle -- both are "
-        "ReferenceSolution objects with the same interface.",
-    )
+    parser.add_argument("--pi-d-star", default="results/pi_d_star_empirical.pkl")
+    parser.add_argument("--reference-config", default="configs/reference.yaml")
     parser.add_argument("--best-config", default="configs/ppo_fixed_d_best_config.yaml")
     parser.add_argument(
         "--reuse-checkpoint",
         default=None,
         help="Path to a *.pt saved by a previous run of this script. If given, retraining is "
-        "skipped entirely and this checkpoint is used directly for the comparison -- e.g. to "
-        "re-run against a different --pi-d-star without retraining the same network twice.",
+        "skipped and this checkpoint is used directly -- e.g. to re-run against a different "
+        "--pi-d-star without retraining the same network twice.",
     )
-    parser.add_argument("--checkpoint-every", type=int, default=5)
-    parser.add_argument("--eval-episodes", type=int, default=500)
+    parser.add_argument("--checkpoint-every", type=int, default=5, help="Only used when retraining.")
+    parser.add_argument(
+        "--episodes-per-state",
+        type=int,
+        default=20,
+        help="Independent rollouts per state for the discounted-return estimate. Higher = more "
+        "precise but slower; see the per-state stderr in the output CSV to judge if it's enough.",
+    )
+    parser.add_argument(
+        "--eval-episodes",
+        type=int,
+        default=500,
+        help="Episode count for the retrain's OWN live-eval checkpointing (unrelated to "
+        "--episodes-per-state, which is for the per-state rollout comparison after training).",
+    )
     parser.add_argument("--eval-seed", type=int, default=24680)
     parser.add_argument("--out-dir", default="results/analysis/policy_agreement")
     parser.add_argument(
-        "--near-death-threshold",
+        "--z-threshold",
         type=float,
-        default=-0.9,
-        help="States with true V^pi_beta below this are flagged as near-certain-death states "
-        "(hazard_reward is -1.0 by default, so -0.9 catches states pi_beta walks into a hazard "
-        "from almost every time).",
+        default=2.0,
+        help="A state is only flagged as a disagreement state if, in addition to the actions "
+        "differing, value_gap exceeds z-threshold * stderr of the per-state discounted-return "
+        "estimate -- guards against flagging noise from a small --episodes-per-state as a real gap.",
     )
     args = parser.parse_args()
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
+    ref_cfg = ReferenceConfig.from_yaml(args.reference_config)
     env = StochasticMazeEnv(
         width=env_cfg.width,
         height=env_cfg.height,
@@ -189,7 +237,7 @@ def main():
 
     with open(args.pi_d_star, "rb") as f:
         ref = pickle.load(f)
-    print(f"Loaded pi_D* ({ref.kind}) from {args.pi_d_star}")
+    print(f"Loaded pi_D* ({ref.kind}) from {args.pi_d_star}, gamma={ref_cfg.gamma}")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -243,12 +291,14 @@ def main():
     best_net = ActorCritic(best_ckpt["obs_dim"], best_ckpt["n_actions"], best_ckpt["hidden_sizes"])
     best_net.load_state_dict(best_ckpt["state_dict"])
     best_net.eval()
+    act_fn = make_neural_act_fn(best_net, deterministic=True)
 
     prior_net = ActorCritic(prior_ckpt["obs_dim"], prior_ckpt["n_actions"], prior_ckpt["hidden_sizes"])
     prior_net.load_state_dict(prior_state_dict)
     prior_net.eval()
 
-    # --- Step 2: per-state comparison. ---
+    # --- Step 2: cheap per-state quantities (no rollout): logits, argmax,
+    # rank correlation, pi_beta's own critic accuracy. ---
     terminal_states = {s for s in range(env.n_states) if env.is_terminal_state(s)}
     non_terminal = [s for s in range(env.n_states) if s not in terminal_states]
     obs_batch = np.stack([env.state_to_obs(s) for s in non_terminal]).astype(np.float32)
@@ -267,74 +317,76 @@ def main():
         prior_action_probs_full[s] = prior_action_probs_np[i]
         prior_critic_pred_full[s] = prior_critic_pred_np[i]
 
-    print(f"Computing exact V^pi_beta(s) via policy evaluation against true dynamics (gamma={env_cfg.gamma})...")
-    true_value = compute_true_value_of_policy(env, prior_action_probs_full, gamma=env_cfg.gamma)
+    print("Computing exact V^pi_beta(s) (for the later critic-error diagnostic, not used here)...")
+    true_value_pi_beta = compute_true_value_of_policy(env, prior_action_probs_full, gamma=env_cfg.gamma)
 
+    # --- Step 3: the expensive part -- discounted rollout from every state. ---
+    print(
+        f"\nRolling out the best-config policy from all {len(non_terminal)} non-terminal states, "
+        f"{args.episodes_per_state} episodes each ({len(non_terminal) * args.episodes_per_state} "
+        f"episodes total)...\n"
+    )
     rows = []
-    for i, s in enumerate(non_terminal):
-        r, c = env.layout.rc(s)
+    for k, s in enumerate(non_terminal):
         q_star = ref.Q[s]
-        logit_ppo = best_logits_np[i]
-        rank_corr = spearman_corr(q_star, logit_ppo)
         pi_d_star_action = int(np.argmax(q_star))
-        best_config_action = int(np.argmax(logit_ppo))
+        pi_d_star_V = float(ref.V[s])
+        best_config_action = int(np.argmax(best_logits_np[k]))
+        argmax_disagree = int(pi_d_star_action != best_config_action)
+        rank_corr = spearman_corr(q_star, best_logits_np[k])
+
+        mean_return, stderr = discounted_rollout_from_state(
+            env, act_fn, s, args.episodes_per_state, gamma=ref_cfg.gamma, seed=args.eval_seed
+        )
+        value_gap = pi_d_star_V - mean_return
+        is_disagreement = bool(argmax_disagree and value_gap > args.z_threshold * stderr)
+        severity = max(0.0, value_gap) if is_disagreement else 0.0
+
+        r, c = env.layout.rc(s)
         rows.append(
             {
                 "state": s,
                 "row": r,
                 "col": c,
                 "covered": s in covered_states,
-                "true_value_pi_beta": float(true_value[s]),
-                "near_death": bool(true_value[s] < args.near_death_threshold),
-                "critic_pred_pi_beta": float(prior_critic_pred_full[s]),
-                "critic_abs_error": float(abs(prior_critic_pred_full[s] - true_value[s])),
+                "pi_d_star_V": pi_d_star_V,
                 "pi_d_star_action": pi_d_star_action,
                 "best_config_action": best_config_action,
-                "argmax_agree": int(pi_d_star_action == best_config_action),
+                "argmax_disagree": argmax_disagree,
                 "rank_correlation": rank_corr,
+                "ppo_discounted_return": mean_return,
+                "ppo_discounted_return_stderr": stderr,
+                "value_gap": value_gap,
+                "is_disagreement": int(is_disagreement),
+                "severity": severity,
+                "true_value_pi_beta": float(true_value_pi_beta[s]),
+                "critic_pred_pi_beta": float(prior_critic_pred_full[s]),
+                "critic_abs_error": float(abs(prior_critic_pred_full[s] - true_value_pi_beta[s])),
             }
         )
+        if (k + 1) % 100 == 0 or (k + 1) == len(non_terminal):
+            print(f"  {k + 1}/{len(non_terminal)} states done...")
+
     df = pd.DataFrame(rows)
-
-    def report(label: str, sub: pd.DataFrame):
-        print(
-            f"  {label:16s} n={len(sub):4d}  argmax_agree={sub['argmax_agree'].mean():.3f}  "
-            f"mean_rank_corr={sub['rank_correlation'].mean():.3f}  "
-            f"(nan_rank_corr={sub['rank_correlation'].isna().sum()})"
-        )
-
-    print(f"\n=== Policy agreement: pi_D* ({ref.kind}) vs. best fixed-D PPO configuration ===")
-    report("all", df)
-    report("covered", df[df["covered"]])
-    report("near_death", df[df["near_death"]])
-    report("not near_death", df[~df["near_death"]])
-    report("covered & near_death", df[df["covered"] & df["near_death"]])
-    report("covered & not near_death", df[df["covered"] & ~df["near_death"]])
-
     csv_path = out_dir / "policy_agreement.csv"
     df.to_csv(csv_path, index=False)
-    print(f"\nSaved {csv_path}")
 
-    # --- Plot 1: critic abs error vs. rank correlation ---
-    fig, ax = plt.subplots(figsize=(7, 6))
-    for flag, color, label in [(False, "tab:blue", "not near-death"), (True, "tab:red", "near-death")]:
-        sub = df[df["near_death"] == flag]
-        ax.scatter(sub["critic_abs_error"], sub["rank_correlation"], s=14, alpha=0.6, color=color, label=label)
-    ax.set_xlabel("critic abs error under \u03c0\u03b2 (|predicted - exact true value|)")
-    ax.set_ylabel(f"rank correlation: \u03c0D* ({ref.kind}) vs. best-config policy")
-    ax.set_title("Does critic inaccuracy line up with policy disagreement?")
-    ax.legend(fontsize=8)
-    fig.tight_layout()
-    plot1 = out_dir / "policy_agreement_vs_critic_error"
-    fig.savefig(plot1.with_suffix(".svg"))
-    fig.savefig(plot1.with_suffix(".png"), dpi=150)
-    plt.close(fig)
-    print(f"Saved {plot1}.svg/.png")
+    n_disagree = int(df["is_disagreement"].sum())
+    print(f"\n=== Summary ===")
+    print(f"States: {len(df)} total, {df['covered'].sum()} covered by D")
+    print(f"Argmax disagreement alone: {df['argmax_disagree'].sum()} states")
+    print(
+        f"Disagreement states (argmax differs AND value_gap > "
+        f"{args.z_threshold}x stderr): {n_disagree} states"
+    )
+    print(f"  of which covered by D: {int((df['is_disagreement'] & df['covered']).sum())}")
+    print(f"Saved {csv_path}")
 
-    # --- Plot 2: spatial maze map, colored by rank correlation ---
-    fig, ax = plt.subplots(figsize=(7, 7))
+    # --- Plot: maze map colored by severity. ---
+    fig, ax = plt.subplots(figsize=(8, 8))
+    vmax = max(df["severity"].quantile(0.95), 1e-6)
     sc = ax.scatter(
-        df["col"], df["row"], c=df["rank_correlation"], cmap="RdYlGn", vmin=-1, vmax=1, s=90, marker="s",
+        df["col"], df["row"], c=df["severity"], cmap="RdYlGn_r", vmin=0, vmax=vmax, s=90, marker="s",
         edgecolors="0.3", linewidths=0.3,
     )
     hz_rows = [r for (r, c) in env.layout.hazards]
@@ -345,15 +397,19 @@ def main():
     ax.invert_yaxis()
     ax.set_xlabel("col")
     ax.set_ylabel("row")
-    ax.set_title(f"\u03c0D* ({ref.kind}) vs. best-config policy: rank correlation by maze cell")
-    fig.colorbar(sc, ax=ax, label="rank correlation (1=agree, -1=reversed)")
-    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.15, 1.0))
+    ax.set_title(
+        f"Disagreement severity by maze cell (\u03c0D* {ref.kind} vs. best-config PPO)\n"
+        f"green=agree/no gap, red=disagree & \u03c0D* expects much more",
+        fontsize=11,
+    )
+    fig.colorbar(sc, ax=ax, label="severity (value_gap where flagged as a disagreement, else 0)")
+    ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.2, 1.0))
     fig.tight_layout()
-    plot2 = out_dir / "policy_agreement_maze_map"
-    fig.savefig(plot2.with_suffix(".svg"))
-    fig.savefig(plot2.with_suffix(".png"), dpi=150)
+    plot_path = out_dir / "policy_agreement_maze_map"
+    fig.savefig(plot_path.with_suffix(".svg"))
+    fig.savefig(plot_path.with_suffix(".png"), dpi=150)
     plt.close(fig)
-    print(f"Saved {plot2}.svg/.png")
+    print(f"Saved {plot_path}.svg/.png")
 
 
 if __name__ == "__main__":
