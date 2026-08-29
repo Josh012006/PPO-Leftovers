@@ -1147,8 +1147,7 @@ not honest uncertainty.
 Two checks were run before treating this as settled — both using existing
 artifacts, no new training beyond what already existed:
 
-**Check 1 — coverage density, not just coverage.** `scripts/
-analyze_coverage_density.py` compares, among *covered* states only, how
+**Check 1 — coverage density, not just coverage.** `scripts/analyze_coverage_density.py` compares, among *covered* states only, how
 densely near-death and non-near-death states are actually sampled in `D`:
 
 <div align="center">
