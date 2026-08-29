@@ -1,57 +1,48 @@
 """Where, exactly, does the best fixed-D PPO configuration's policy differ
-from pi_D*'s? The natural next diagnostic after "Where we are at": with
-the residual gap down to ~0.04 (95.4% vs. pi_D*'s 99.2%), the next useful
-thing is not another hyperparameter sweep -- it's finding out precisely
-which states the two policies disagree on, and whether that disagreement
-lines up with the critic's already-identified blind spot (near-hazard
-states, see "Critic accuracy diagnostic") or with something else entirely
-(the clipped objective itself, or the single-window constraint).
+from pi_D*'s? For every non-terminal state, compares pi_D*'s exact action
+ranking (from its Q-values, no training noise) against the best fixed-D
+PPO configuration's ranking (from its policy logits) via Spearman rank
+correlation and simple argmax agreement, and cross-references both
+against whether pi_beta's own policy walks into near-certain death from
+that state.
 
-Two things this script does that no earlier script in this project does:
+By default (no --reuse-checkpoint), this RETRAINS the best configuration
+found so far (clip_eps=0.3, entropy_coef=0.01, gae_lambda=0.90,
+minibatch_size=64 -- configs/ppo_fixed_d_best_config.yaml), tracking the
+BEST live-eval checkpoint seen during training rather than only the final
+epoch (via scripts/_analysis_lib.py's save_best_checkpoint_path option --
+given how non-monotonic these runs are throughout this project, epoch 300
+is not reliably where the best policy actually was).
 
-1. Retrains the best configuration found so far (clip_eps=0.3,
-   entropy_coef=0.01, gae_lambda=0.90, minibatch_size=64 -- configs/
-   ppo_fixed_d_best_config.yaml) while tracking the BEST live-eval
-   checkpoint seen during training, not just the final epoch. Every
-   earlier analysis script only ever saved the training CURVE (CSV +
-   plots), never a usable network checkpoint -- and given how
-   non-monotonic these curves are (see "Epoch-count ceiling analysis"),
-   epoch 300 is not reliably where the best policy actually was. This
-   uses the new `save_best_checkpoint_path` option in
-   scripts/_analysis_lib.py's run_single_analysis to fix that.
+Pass --reuse-checkpoint <path to an already-saved *.pt from a previous run
+of this script> to SKIP retraining entirely and re-run just the
+comparison -- e.g. against pi_D*'s true-restricted definition instead of
+the empirical one (via --pi-d-star), to check whether a disagreement
+pattern found against the empirical definition survives once MLE sampling
+noise in the reference itself is removed (same visited (s,a) support,
+exact transition probabilities instead of D's estimated ones). This is
+the cheap way to ask "is this about D's coverage, or about noise in
+estimating probabilities over what D already covers" without retraining
+the same network twice.
 
-2. Compares pi_D*'s policy against that checkpoint's policy by RANK, not
-   just by best-action agreement: for every non-terminal state, pi_D*'s
-   exact Q-values (from value iteration -- no training noise) and the
-   PPO policy's logits both induce a preference ordering over the 4
-   actions. Spearman rank correlation between the two orderings is a
-   richer signal than argmax agreement alone -- it distinguishes "picked
-   a different best action, but otherwise agrees on the ranking" from
-   "sees the state's actions in a completely different order." Ties are
-   common and expected on pi_D*'s side (every unvisited (s,a) pair at a
-   given state collapses to the same unseen_penalty Q-value) and are
-   handled by average rank, matching the standard Spearman convention --
-   implemented directly in numpy here rather than adding a scipy
-   dependency for one function.
+Spearman rank correlation is implemented directly in numpy (ties handled
+by average rank, matching the standard convention) rather than adding a
+scipy dependency for this one function. Ties are common and expected on
+pi_D*'s side: every unvisited (s,a) pair at a given state collapses to
+the same unseen_penalty Q-value.
 
 Also recomputes the critic-accuracy diagnostic's true_value(s) under
 pi_beta (reusing reference.experience_optimal.compute_true_value_of_policy
--- no need to have run scripts/analyze_critic_accuracy.py first) to test
-the specific question raised in "Where we are at": does policy
-disagreement concentrate on states pi_beta's own policy walks into
-near-certain death from (true_value close to the hazard_reward), the same
-blind spot the critic accuracy diagnostic already found?
+-- no need to have run scripts/analyze_critic_accuracy.py first).
 
-Outputs, under --out-dir (default results/analysis/policy_agreement/):
-  best_config_checkpoint.pt                    -- the tracked best-observed
-                                                   network (state_dict +
-                                                   which epoch/success_rate
-                                                   it came from)
+Outputs, under --out-dir:
+  best_config_checkpoint.pt                    -- (only when retraining)
+                                                   the tracked best-observed
+                                                   network
   best_config_retrain.csv / _success_return.svg / _clip_entropy.svg
-                                                 -- the retrain's own
-                                                   trajectory, exactly as
-                                                   any other analyze_epochs.py
-                                                   -style run produces
+                                                 -- (only when retraining)
+                                                   the retrain's own
+                                                   trajectory
   policy_agreement.csv                          -- per-state: covered,
                                                    true_value_pi_beta,
                                                    near_death, pi_d_star_
@@ -66,15 +57,24 @@ Outputs, under --out-dir (default results/analysis/policy_agreement/):
                                                    by rank correlation,
                                                    hazards/start/goal marked
 
-Usage:
+Usage (retrain, first run):
     python scripts/analyze_policy_agreement.py \
         --env-config configs/env_maze.yaml \
         --dataset results/dataset_D.pkl \
         --prior-checkpoint results/prior_checkpoint.pt \
-        --pi-d-star-empirical results/pi_d_star_empirical.pkl \
+        --pi-d-star results/pi_d_star_empirical.pkl \
         --best-config configs/ppo_fixed_d_best_config.yaml \
         --checkpoint-every 5 --eval-episodes 500 --eval-seed 24680 \
         --out-dir results/analysis/policy_agreement
+
+Usage (re-run against true-restricted pi_D*, reusing the checkpoint above):
+    python scripts/analyze_policy_agreement.py \
+        --env-config configs/env_maze.yaml \
+        --dataset results/dataset_D.pkl \
+        --prior-checkpoint results/prior_checkpoint.pt \
+        --pi-d-star results/pi_d_star_true_restricted.pkl \
+        --reuse-checkpoint results/analysis/policy_agreement/best_config_checkpoint.pt \
+        --out-dir results/analysis/policy_agreement_true_restricted
 """
 from __future__ import annotations
 
@@ -137,8 +137,20 @@ def main():
     parser.add_argument("--env-config", default="configs/env_maze.yaml")
     parser.add_argument("--dataset", default="results/dataset_D.pkl")
     parser.add_argument("--prior-checkpoint", default="results/prior_checkpoint.pt")
-    parser.add_argument("--pi-d-star-empirical", default="results/pi_d_star_empirical.pkl")
+    parser.add_argument(
+        "--pi-d-star",
+        default="results/pi_d_star_empirical.pkl",
+        help="Path to either the empirical or true-restricted pi_D* pickle -- both are "
+        "ReferenceSolution objects with the same interface.",
+    )
     parser.add_argument("--best-config", default="configs/ppo_fixed_d_best_config.yaml")
+    parser.add_argument(
+        "--reuse-checkpoint",
+        default=None,
+        help="Path to a *.pt saved by a previous run of this script. If given, retraining is "
+        "skipped entirely and this checkpoint is used directly for the comparison -- e.g. to "
+        "re-run against a different --pi-d-star without retraining the same network twice.",
+    )
     parser.add_argument("--checkpoint-every", type=int, default=5)
     parser.add_argument("--eval-episodes", type=int, default=500)
     parser.add_argument("--eval-seed", type=int, default=24680)
@@ -175,46 +187,53 @@ def main():
     prior_state_dict = prior_ckpt["state_dict"]
     print(f"Loaded prior checkpoint (final eval: {prior_ckpt['final_eval']})")
 
-    with open(args.pi_d_star_empirical, "rb") as f:
+    with open(args.pi_d_star, "rb") as f:
         ref = pickle.load(f)
+    print(f"Loaded pi_D* ({ref.kind}) from {args.pi_d_star}")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    ceiling_success_rate = compute_ceiling_success_rate(env, args.pi_d_star_empirical, args.eval_episodes, args.eval_seed)
-    print(f"pi_D* (empirical) ceiling under this run's eval protocol: success_rate={ceiling_success_rate:.3f}")
+    # --- Step 1: get the best-config policy, either by retraining (default)
+    # or by reusing an already-saved checkpoint (--reuse-checkpoint). ---
+    if args.reuse_checkpoint:
+        best_ckpt_path = Path(args.reuse_checkpoint)
+        print(f"\n--reuse-checkpoint given: skipping retrain, loading {best_ckpt_path} directly.")
+        best_ckpt = torch.load(best_ckpt_path, map_location="cpu", weights_only=False)
+    else:
+        cfg = PPOHyperparams.from_yaml(args.best_config)
+        set_global_seed(cfg.seed)
+        best_ckpt_path = out_dir / "best_config_checkpoint.pt"
 
-    # --- Step 1: retrain the best configuration, tracking its best-ever
-    # live checkpoint (not just the final epoch). ---
-    cfg = PPOHyperparams.from_yaml(args.best_config)
-    set_global_seed(cfg.seed)
-    best_ckpt_path = out_dir / "best_config_checkpoint.pt"
+        ceiling_success_rate = compute_ceiling_success_rate(
+            env, args.pi_d_star, args.eval_episodes, args.eval_seed
+        )
+        print(f"pi_D* ceiling under this run's eval protocol: success_rate={ceiling_success_rate:.3f}")
+        print(
+            f"\nRetraining the best configuration ({args.best_config}) for up to {cfg.epochs} epochs, "
+            f"tracking the best-observed checkpoint (not just the final one)...\n"
+        )
+        retrain_summary = run_single_analysis(
+            eval_env=env,
+            dataset=dataset,
+            prior_state_dict=prior_state_dict,
+            ceiling_success_rate=ceiling_success_rate,
+            cfg=cfg,
+            checkpoint_every=args.checkpoint_every,
+            eval_episodes=args.eval_episodes,
+            eval_seed=args.eval_seed,
+            out_dir=out_dir,
+            prefix="best_config_retrain",
+            title_suffix="best configuration retrain",
+            verbose=True,
+            save_best_checkpoint_path=best_ckpt_path,
+        )
+        print(
+            f"\nRetrain done: best={retrain_summary['best']:.3f} mean={retrain_summary['mean']:.3f} "
+            f"(best checkpoint at epoch {retrain_summary['best_checkpoint_epoch']})"
+        )
+        best_ckpt = torch.load(best_ckpt_path, map_location="cpu", weights_only=False)
 
-    print(
-        f"\nRetraining the best configuration ({args.best_config}) for up to {cfg.epochs} epochs, "
-        f"tracking the best-observed checkpoint (not just the final one)...\n"
-    )
-    retrain_summary = run_single_analysis(
-        eval_env=env,
-        dataset=dataset,
-        prior_state_dict=prior_state_dict,
-        ceiling_success_rate=ceiling_success_rate,
-        cfg=cfg,
-        checkpoint_every=args.checkpoint_every,
-        eval_episodes=args.eval_episodes,
-        eval_seed=args.eval_seed,
-        out_dir=out_dir,
-        prefix="best_config_retrain",
-        title_suffix="best configuration retrain",
-        verbose=True,
-        save_best_checkpoint_path=best_ckpt_path,
-    )
-    print(
-        f"\nRetrain done: best={retrain_summary['best']:.3f} mean={retrain_summary['mean']:.3f} "
-        f"(best checkpoint at epoch {retrain_summary['best_checkpoint_epoch']})"
-    )
-
-    best_ckpt = torch.load(best_ckpt_path, map_location="cpu", weights_only=False)
     print(
         f"Using the checkpoint from epoch {best_ckpt['epoch']} "
         f"(success_rate={best_ckpt['success_rate']:.3f}) as 'the best configuration's policy' "
@@ -284,11 +303,13 @@ def main():
             f"(nan_rank_corr={sub['rank_correlation'].isna().sum()})"
         )
 
-    print("\n=== Policy agreement: pi_D* (empirical) vs. best fixed-D PPO configuration ===")
+    print(f"\n=== Policy agreement: pi_D* ({ref.kind}) vs. best fixed-D PPO configuration ===")
     report("all", df)
     report("covered", df[df["covered"]])
     report("near_death", df[df["near_death"]])
     report("not near_death", df[~df["near_death"]])
+    report("covered & near_death", df[df["covered"] & df["near_death"]])
+    report("covered & not near_death", df[df["covered"] & ~df["near_death"]])
 
     csv_path = out_dir / "policy_agreement.csv"
     df.to_csv(csv_path, index=False)
@@ -300,7 +321,7 @@ def main():
         sub = df[df["near_death"] == flag]
         ax.scatter(sub["critic_abs_error"], sub["rank_correlation"], s=14, alpha=0.6, color=color, label=label)
     ax.set_xlabel("critic abs error under \u03c0\u03b2 (|predicted - exact true value|)")
-    ax.set_ylabel("rank correlation: \u03c0D* vs. best-config policy")
+    ax.set_ylabel(f"rank correlation: \u03c0D* ({ref.kind}) vs. best-config policy")
     ax.set_title("Does critic inaccuracy line up with policy disagreement?")
     ax.legend(fontsize=8)
     fig.tight_layout()
@@ -324,7 +345,7 @@ def main():
     ax.invert_yaxis()
     ax.set_xlabel("col")
     ax.set_ylabel("row")
-    ax.set_title("\u03c0D* vs. best-config policy: rank correlation by maze cell")
+    ax.set_title(f"\u03c0D* ({ref.kind}) vs. best-config policy: rank correlation by maze cell")
     fig.colorbar(sc, ax=ax, label="rank correlation (1=agree, -1=reversed)")
     ax.legend(fontsize=8, loc="upper left", bbox_to_anchor=(1.15, 1.0))
     fig.tight_layout()

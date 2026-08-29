@@ -1073,6 +1073,142 @@ state, rather than only knowing the aggregate gap exists — the same kind
 of diagnostic the critic-accuracy check above did for `π_β`'s critic, now
 aimed at the policy gap itself.
 
+## Policy agreement: where do `π_D*` and our best config actually disagree?
+
+`scripts/analyze_policy_agreement.py` retrains the best configuration
+(`clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.90`,
+`minibatch_size=64`), this time tracking the best live-eval checkpoint
+seen during training rather than only the final epoch — the retrain's own
+best point was epoch 155 (`success_rate=0.954`), not epoch 300
+(`0.946`), confirming this matters given how non-monotonic these runs are
+throughout this project. For every non-terminal state, it compares `π_D*`'s
+exact action ranking (from its Q-values) against this checkpoint's
+ranking (from its policy logits) via Spearman rank correlation, and
+cross-references both against a "near-death" flag (`true V^π_β < -0.9`,
+i.e. states `π_β`'s own policy walks into a hazard from almost every
+time).
+
+<div align="center">
+
+| | argmax agree | mean rank correlation |
+|---|---|---|
+| covered, not near-death | **89.4%** | 0.702 |
+| covered, near-death | **62.6%** | 0.570 |
+
+</div>
+
+A 27-point gap in agreement rate, landing exactly on the states the
+critic-accuracy diagnostic already flagged. Of the 18 states where the two
+policies disagree sharply enough to give a *negative* rank correlation
+(ranking each other's actions in close to reverse order), 14 are
+near-death states.
+
+<div align="center">
+<img src="results/analysis/policy_agreement/policy_agreement_maze_map.svg" width="65%"><br><em>Rank correlation by maze cell (green=agree, red=reversed). Visually diffuse — the concentration on near-death states only becomes clear in the aggregate numbers above, not from this map alone.</em>
+</div>
+
+<div align="center">
+<img src="results/analysis/policy_agreement/policy_agreement_vs_critic_error.svg" width="65%"><br><em>Critic error vs. rank correlation, colored by near-death. No single clean trend line, but nearly every point below rank correlation 0 is a near-death state (red).</em>
+</div>
+
+### Is "fix the critic" actually the right next step? We talked ourselves out of it.
+
+The first instinct — recalibrate or periodically refresh `π_β`'s critic,
+using the errors just found — turns out to fall outside this project's
+own research question on closer inspection. `π_D*` itself never touches
+any critic: it is computed by exact value iteration on `D`'s raw
+transition counts, no function approximation anywhere. That it succeeds
+without ever needing an accurate *learned* value function is itself the
+point — a neural critic's inaccuracy is not an external nuisance PPO
+happens to suffer from, it is intrinsic to *how* PPO extracts information
+(a bootstrapped, generalizing approximation) versus how `π_D*` does
+(exact counting). Feeding PPO a deliberately-improved critic — whether
+recalibrated once before the fixed-D window or refreshed periodically
+during it — would mostly test "does PPO do better with a better critic,"
+which is close to tautological for any advantage-based method, and would
+not explain *why PPO's own mechanism* fails to extract the maximum from
+`D` as it actually receives it. That question was set aside for exactly
+this reason.
+
+**The question that stays in scope: does value iteration's exactness —
+not access to a better critic — explain why it doesn't share this failure
+mode?** VI is not immune to weak `D` coverage either; a state's value
+still depends on downstream propagation through however much of `D`
+actually reaches it. What differs is how it *treats* that weakness: every
+unvisited `(s,a)` pair is routed to an explicit, dominating penalty
+(`unseen_penalty`) rather than silently extrapolated — VI never claims
+confidence it doesn't have. A neural critic has no equivalent safeguard;
+it generalizes from nearby states whether or not that generalization is
+warranted, and the critic-accuracy diagnostic's `+0.25` systematic
+*overestimation* (not just wide, unbiased noise) is consistent with
+exactly that: confident extrapolation into weakly-supported territory,
+not honest uncertainty.
+
+Two checks were run before treating this as settled — both using existing
+artifacts, no new training beyond what already existed:
+
+**Check 1 — coverage density, not just coverage.** `scripts/
+analyze_coverage_density.py` compares, among *covered* states only, how
+densely near-death and non-near-death states are actually sampled in `D`:
+
+<div align="center">
+
+| | median total samples | median actions visited /4 | states with only 1 action visited |
+|---|---|---|---|
+| covered, not near-death | 1133.5 | 3.0 | 14.4% |
+| covered, near-death | **59.0** | 2.0 | **29.4%** |
+
+</div>
+
+Medians are reported because both distributions are heavily right-skewed
+(a handful of near-death states are, by chance, very well covered — see
+plots below); the mean total-samples gap is a real but smaller `2473` vs.
+`989` (2.5×), while the *typical* near-death state gets **~19× fewer**
+samples than the typical non-near-death one. Nearly a third of covered
+near-death states have only a single action ever visited — almost no
+signal to compare alternatives against at all.
+
+<div align="center">
+<img src="results/analysis/coverage_density/coverage_density_vs_true_value.svg" width="65%"><br><em>Total samples in D vs. exact true value under π_β. The near-death cluster (red, all at true_value≈-1.0) sits mostly near zero samples, with only a few well-covered outliers.</em>
+</div>
+
+<div align="center">
+<img src="results/analysis/coverage_density/coverage_density_strip.svg" width="55%"><br><em>Same comparison as a jittered strip plot; thick marks are group means (pulled upward by the same outliers the median avoids).</em>
+</div>
+
+**Check 2 — true-restricted `π_D*` instead of empirical.** Re-running the
+same policy-agreement comparison against `π_D*` (true-restricted) — same
+visited `(s,a)` support, but exact transition probabilities instead of
+`D`'s own estimated ones — removes MLE sampling noise from the reference
+itself, reusing the *same* already-trained checkpoint
+(`--reuse-checkpoint`, no retraining):
+
+<div align="center">
+
+| | argmax agree (empirical) | argmax agree (true-restricted) |
+|---|---|---|
+| covered, not near-death | 89.4% | 87.8% |
+| covered, near-death | 62.6% | 63.2% |
+
+</div>
+
+Essentially unchanged. The disagreement pattern is not an artifact of
+`D`'s own transition-probability estimation noise — it tracks *which*
+`(s,a)` pairs `D` visited at all (and how densely), not how precisely
+their probabilities were estimated once visited.
+
+**Conclusion.** Both checks point the same way: the residual gap
+concentrates on states where `D`'s signal is real but weak — sparse
+enough that a generalizing neural critic extrapolates over it with false
+confidence, while exact counting (value iteration) does not. Every
+optimization-mechanism hyperparameter tested (`clip_eps`, `epochs`,
+`entropy_coef`, `lr`, `minibatch_size`) showed only modest effects — this
+is not "PPO's update rule is somehow miscalibrated everywhere." It is a
+property of *how* PPO's function-approximation mechanism handles
+low-density regions of experience, concentrated on an identifiable,
+small subset of states, staying inside this project's own research
+question rather than answering an adjacent one.
+
 
 ## Project structure
 
