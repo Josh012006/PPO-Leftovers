@@ -11,17 +11,46 @@ generalizable beyond this specific maze:
                      less signal), not something to control for.
   - goal_distance    (BFS hops to the goal) -- generalizes to "how far
                      into the task / how long-horizon is this state".
-  - start_distance   (BFS hops from the start) -- generalizes to "how
-                     deep into an episode this state typically sits".
   - hazard_distance  (BFS hops to the nearest hazard) -- generalizes to
                      "proximity to an irreversible failure mode".
   - local_connectivity (open walls at this state, 0-4) -- generalizes to
                      "how much structural redundancy/flexibility exists
                      here" (more open walls = more alternative routes).
-  - critic_abs_error (|pi_beta's predicted V - exact true V|, from
-                     scripts/analyze_critic_accuracy.py's diagnostic) --
-                     generalizes to "how wrong is the learned value
-                     function here".
+  - action_sample_gap (log1p(n_samples(s, best_config_action)) -
+                     log1p(n_samples(s, pi_d_star_action)), from D's raw
+                     (state, action) counts) -- generalizes to "how much
+                     more reinforcement did the optimizer's preferred
+                     action get, purely from data volume, than the
+                     actually-better action". Positive means D showed the
+                     PPO-preferred action more often than pi_D*'s.
+  - pi_beta_prob_gap (pi_beta(best_config_action|s) -
+                     pi_beta(pi_d_star_action|s), from the behavior
+                     policy's own actor, not its critic) -- generalizes to
+                     "how much did the *ratio denominator* in PPO's
+                     clipped objective already favor the optimizer's
+                     action over the better one, independent of how many
+                     samples happened to land". Distinct from
+                     action_sample_gap: one is realized sample counts
+                     (noisy, finite-D), the other is the underlying
+                     behavior-policy probability that sets the scale of
+                     PPO's importance ratio for that state-action pair.
+
+action_sample_gap and pi_beta_prob_gap are both computed only at states
+where the argmax differs (0 elsewhere, matching severity's own
+definition), and both stay strictly inside what fixed-D PPO's own
+optimization mechanism consumes (D's sample counts, the frozen
+pi_old actor) -- neither touches pi_beta's critic.
+
+pi_beta's critic accuracy is deliberately NOT a tested factor here. That
+the critic is imperfect is already an accepted premise of this whole
+project, not a hypothesis to re-confirm via a weak correlation -- the
+actual question this project asks is how well fixed-D PPO can still reach
+pi_D* while working with D and this potentially-biased critic *as given*,
+not whether the critic itself could be made more accurate. start_distance
+(BFS hops from the start) is also dropped: under this script's per-state
+protocol, every state IS the rollout start (see
+analyze_policy_agreement.py), so "distance from the start" has no
+meaningful interpretation here.
 
 For every factor EXCEPT coverage, both the RAW correlation and the
 PARTIAL correlation (controlling for coverage) against `severity` are
@@ -34,7 +63,9 @@ vanishes was likely just riding along with coverage.
 Requires policy_agreement.csv from a previous run of
 scripts/analyze_policy_agreement.py (any --pi-d-star variant; state-level
 severity doesn't depend on which one was used for that run's own
-disagreement flags, though results may differ slightly run to run).
+disagreement flags, though results may differ slightly run to run), and
+the prior checkpoint (for pi_beta_prob_gap -- a fresh, cheap forward pass
+over all states, no rollout).
 
 Outputs, under --out-dir (default results/analysis/disagreement_factors/):
   disagreement_factors.csv        -- per-state: every factor + severity
@@ -63,23 +94,25 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import matplotlib
+import numpy as np
+import pandas as pd
+import torch
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import numpy as np
-import pandas as pd
 
-from _analysis_lib import goal_bfs_distance, hazard_bfs_distance, local_connectivity, start_bfs_distance
+from _analysis_lib import goal_bfs_distance, hazard_bfs_distance, local_connectivity
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
+from ppo_exploitation.ppo.networks import ActorCritic
 from ppo_exploitation.utils.config import MazeEnvConfig
 
 FACTOR_LABELS = {
     "goal_distance": "distance to goal",
-    "start_distance": "distance from start",
     "hazard_distance": "distance to nearest hazard",
     "local_connectivity": "local connectivity (open walls)",
-    "critic_abs_error": "critic error under \u03c0\u03b2",
+    "action_sample_gap": "action sample-count gap (log, best-config \u2212 \u03c0D*)",
+    "pi_beta_prob_gap": "\u03c0\u03b2 action-prob gap (best-config \u2212 \u03c0D*)",
 }
 
 
@@ -96,6 +129,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--env-config", default="configs/env_maze.yaml")
     parser.add_argument("--dataset", default="results/dataset_D.pkl")
+    parser.add_argument("--prior-checkpoint", default="results/prior_checkpoint.pt")
     parser.add_argument(
         "--policy-agreement-csv", default="results/analysis/policy_agreement/policy_agreement.csv"
     )
@@ -134,8 +168,23 @@ def main():
             sa_counts[(int(s), int(a))] += 1
     total_samples = {s: sum(sa_counts.get((s, a), 0) for a in range(env.n_actions)) for s in pa["state"]}
 
+    prior_ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
+    print(f"Loaded prior checkpoint (final eval: {prior_ckpt['final_eval']})")
+
+    prior_net = ActorCritic(prior_ckpt["obs_dim"], prior_ckpt["n_actions"], prior_ckpt["hidden_sizes"])
+    prior_net.load_state_dict(prior_ckpt["state_dict"])
+    prior_net.eval()
+
+    non_terminal = [s for s in range(env.n_states) if not env.is_terminal_state(s)]
+    obs_batch = np.stack([env.state_to_obs(s) for s in non_terminal]).astype(np.float32)
+    with torch.no_grad():
+        prior_logits, _ = prior_net.forward(torch.as_tensor(obs_batch))
+        prior_action_probs_np = torch.softmax(prior_logits, dim=-1).numpy()
+    prior_action_probs_full = np.zeros((env.n_states, env.n_actions), dtype=np.float64)
+    for i, s in enumerate(non_terminal):
+        prior_action_probs_full[s] = prior_action_probs_np[i]
+
     goal_d = goal_bfs_distance(env)
-    start_d = start_bfs_distance(env)
     hazard_d = hazard_bfs_distance(env)
     conn = local_connectivity(env)
 
@@ -143,9 +192,25 @@ def main():
     df["total_samples"] = df["state"].map(total_samples)
     df["log_coverage"] = np.log1p(df["total_samples"])
     df["goal_distance"] = df["state"].map(goal_d)
-    df["start_distance"] = df["state"].map(start_d)
     df["hazard_distance"] = df["state"].map(hazard_d)
     df["local_connectivity"] = df["state"].map(conn)
+
+    # action_sample_gap / pi_beta_prob_gap: both compare pi_D*'s preferred
+    # action against best-config PPO's preferred action at each state. When
+    # the two agree (no argmax_disagree), both gaps are exactly 0 -- no
+    # special-casing needed, since a==a gives log1p(n)-log1p(n)=0 and
+    # prob(a)-prob(a)=0 automatically.
+    states_arr = df["state"].to_numpy(dtype=int)
+    pi_d_star_actions = df["pi_d_star_action"].to_numpy(dtype=int)
+    best_config_actions = df["best_config_action"].to_numpy(dtype=int)
+
+    n_star = np.array([sa_counts.get((s, a), 0) for s, a in zip(states_arr, pi_d_star_actions)])
+    n_best = np.array([sa_counts.get((s, a), 0) for s, a in zip(states_arr, best_config_actions)])
+    df["action_sample_gap"] = np.log1p(n_best) - np.log1p(n_star)
+
+    prob_star = prior_action_probs_full[states_arr, pi_d_star_actions]
+    prob_best = prior_action_probs_full[states_arr, best_config_actions]
+    df["pi_beta_prob_gap"] = prob_best - prob_star
 
     if args.covered_only:
         df = df[df["covered"]].copy()
@@ -178,7 +243,7 @@ def main():
     summary_rows.append({"factor": "coverage", "raw_r": r_cov, "partial_r_controlling_coverage": None})
 
     print("\n=== other factors: raw vs. partial (controlling for coverage) ===")
-    for factor in ["goal_distance", "start_distance", "hazard_distance", "local_connectivity", "critic_abs_error"]:
+    for factor in ["goal_distance", "hazard_distance", "local_connectivity", "action_sample_gap", "pi_beta_prob_gap"]:
         x = df[factor].values.astype(float)
         raw_r = safe_corr(x, severity)
         if np.std(severity) == 0 or np.std(coverage) == 0:

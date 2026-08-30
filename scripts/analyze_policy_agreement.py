@@ -103,12 +103,20 @@ severity is exactly zero.
 
 ## Dataset coverage
 
-`covered` indicates whether dataset D contains the state.
+`covered` indicates whether dataset D contains the state at all;
+`n_actions_covered` (0-4) is how many distinct actions D actually has at
+least one sample for at that state -- a finer-grained signal than the
+boolean, and the one used to size the marker (see below).
 
-States that are NOT covered by D remain visible in the heatmap, because
-they are useful for identifying behavior outside the demonstrated
-distribution. However, they are visually distinguished with a MARRON
-border so that they are not confused with states supported by D.
+States NOT covered by D (`covered=False`, `n_actions_covered=0`) are
+rendered blank (white, no border) in the maze map: they carry no severity
+signal of their own (pi_D*'s tie-break there is uninformed), so leaving
+them blank avoids implying a real disagreement measurement exists there.
+They remain in the CSV for completeness.
+
+Marker size scales with `n_actions_covered` (more actions sampled by D at
+a state -> a visibly larger square), with a floor so no square ever
+becomes too small to see, even at low coverage.
 
 ## CSV outputs
 
@@ -118,6 +126,7 @@ state
 row
 col
 covered
+n_actions_covered
 pi_d_star_V
 pi_d_star_action
 best_config_action
@@ -185,6 +194,7 @@ import matplotlib
 
 matplotlib.use("Agg")
 
+import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
@@ -422,11 +432,12 @@ def main():
 
     dataset = load_dataset(args.dataset)
 
-    covered_states = {
-        int(s)
-        for tr in dataset.trajectories
-        for s in tr.states
-    }
+    state_actions_seen: dict[int, set[int]] = {}
+    for tr in dataset.trajectories:
+        for s, a in zip(tr.states.tolist(), tr.actions.tolist()):
+            state_actions_seen.setdefault(int(s), set()).add(int(a))
+
+    covered_states = set(state_actions_seen.keys())
 
     print(
         f"Loaded D: {len(dataset)} transitions, "
@@ -699,6 +710,7 @@ def main():
                 "row": r,
                 "col": c,
                 "covered": s in covered_states,
+                "n_actions_covered": len(state_actions_seen.get(s, ())),
                 "pi_d_star_V": pi_d_star_V,
                 "pi_d_star_action": pi_d_star_action,
                 "best_config_action": best_config_action,
@@ -831,44 +843,69 @@ def main():
     #   yellow -> small positive cost
     #   orange -> moderate positive cost
     #   red -> large positive cost
+    #   blank (white, no border) -> state NOT covered by D at all; no
+    #     severity signal exists there, so it is left empty rather than
+    #     colored, instead of being marked with a border as before.
     #
-    # Border:
-    #   blue -> state NOT covered by dataset D
-    #   gray -> state covered by dataset D
+    # Marker size encodes n_actions_covered (0-4): how many distinct
+    # actions D actually sampled at that state, not just whether the
+    # state is covered at all. A floor keeps every square legible even
+    # at the lowest coverage. The figure itself is sized up from the
+    # original 8x8 so that this size variation stays readable across the
+    # full 30x30 grid.
     #
     # All of the above (color scale via colorbar, hazard/goal markers,
-    # border meaning) is documented in the legend/colorbar rather than
+    # blank meaning) is documented in the legend/colorbar rather than
     # crammed into the title, so the title itself stays short and fully
     # visible.
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(
-        figsize=(8, 8)
+        figsize=(11, 11)
     )
 
     covered_mask = df["covered"].to_numpy(
         dtype=bool
     )
 
+    cmap = matplotlib.colormaps["RdYlGn_r"]
+
+    norm = mcolors.Normalize(
+        vmin=0.0,
+        vmax=1.0,
+    )
+
+    face_colors = cmap(
+        norm(df["severity"].to_numpy(dtype=float))
+    )
+
+    face_colors[~covered_mask] = mcolors.to_rgba("white")
+
     edgecolors = np.where(
         covered_mask,
         "0.3",
-        "tab:blue",
+        "none",
     )
 
     linewidths = np.where(
         covered_mask,
         0.3,
-        1.0,
+        0.0,
     )
+
+    MIN_MARKER_SIZE = 45
+    MAX_MARKER_SIZE = 170
+
+    n_actions_covered = df["n_actions_covered"].to_numpy(dtype=float)
+
+    marker_sizes = MIN_MARKER_SIZE + (
+        MAX_MARKER_SIZE - MIN_MARKER_SIZE
+    ) * (n_actions_covered / env.n_actions)
 
     sc = ax.scatter(
         df["col"],
         df["row"],
-        c=df["severity"],
-        cmap="RdYlGn_r",
-        vmin=0.0,
-        vmax=1.0,
-        s=90,
+        c=face_colors,
+        s=marker_sizes,
         marker="s",
         edgecolors=edgecolors,
         linewidths=linewidths,
@@ -915,8 +952,19 @@ def main():
         fontsize=12,
     )
 
+    # `sc` no longer carries its own colormap/norm (colors were assigned
+    # manually so uncovered states could be overridden to white), so the
+    # colorbar needs its own explicit ScalarMappable rather than reusing
+    # `sc` directly.
+    severity_mappable = matplotlib.cm.ScalarMappable(
+        norm=norm,
+        cmap=cmap,
+    )
+
+    severity_mappable.set_array([])
+
     fig.colorbar(
-        sc,
+        severity_mappable,
         ax=ax,
         label=(
             "normalized disagreement severity\n"
@@ -924,26 +972,46 @@ def main():
         ),
     )
 
-    # Not-covered-by-D border is not a scatter series of its own (it's an
-    # edge style on the main `sc` scatter), so it needs a manual legend
-    # proxy artist rather than relying on a `label=` kwarg.
+    # Blank-by-not-covered is not a scatter series of its own (it's a
+    # facecolor/edge override on the main `sc` scatter), so it needs a
+    # manual legend proxy artist rather than relying on a `label=` kwarg.
+    # A faint gray outline is used here ONLY so the blank square is
+    # visible as an entry in the legend -- on the map itself, uncovered
+    # states have no border at all.
     not_covered_handle = plt.Line2D(
         [0],
         [0],
         marker="s",
-        markersize=9,
-        markerfacecolor="none",
-        markeredgecolor="tab:blue",
-        markeredgewidth=1.0,
+        markersize=11,
+        markerfacecolor="white",
+        markeredgecolor="0.7",
+        markeredgewidth=0.8,
         linestyle="None",
-        label="not covered by D",
+        label="blank = not covered by D",
     )
 
+    # Different sizes legend
+    size_handles = [
+        plt.Line2D(
+            [0],
+            [0],
+            markersize=11 * (n / env.n_actions),
+            marker="s",
+            markerfacecolor="green",
+            markeredgecolor="0.7",
+            markeredgewidth=0.8,
+            linestyle="None",
+            label= str(n) + " action" + ("s" if n > 1 else "") + " covered by D",
+        )
+        for n in range(1, env.n_actions+1)
+    ]
+
     ax.legend(
-        handles=[hazard_handle, goal_handle, not_covered_handle],
+        handles=[hazard_handle, goal_handle, not_covered_handle, *size_handles],
         fontsize=8,
         loc="upper left",
         bbox_to_anchor=(1.2, 1.0),
+        labelspacing=1.0,
     )
 
     fig.tight_layout()
