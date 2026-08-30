@@ -833,8 +833,13 @@ def main():
     #   red -> large positive cost
     #
     # Border:
-    #   brown -> state NOT covered by dataset D
-    #   gray  -> state covered by dataset D
+    #   blue -> state NOT covered by dataset D
+    #   gray -> state covered by dataset D
+    #
+    # All of the above (color scale via colorbar, hazard/goal markers,
+    # border meaning) is documented in the legend/colorbar rather than
+    # crammed into the title, so the title itself stays short and fully
+    # visible.
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(
         figsize=(8, 8)
@@ -847,13 +852,13 @@ def main():
     edgecolors = np.where(
         covered_mask,
         "0.3",
-        "saddlebrown",
+        "tab:blue",
     )
 
     linewidths = np.where(
         covered_mask,
         0.3,
-        1.8,
+        1.0,
     )
 
     sc = ax.scatter(
@@ -879,7 +884,7 @@ def main():
         for (r, c) in env.layout.hazards
     ]
 
-    ax.scatter(
+    hazard_handle = ax.scatter(
         hz_cols,
         hz_rows,
         marker="x",
@@ -889,17 +894,7 @@ def main():
         label="hazard",
     )
 
-    ax.scatter(
-        [env.layout.start[1]],
-        [env.layout.start[0]],
-        marker="*",
-        s=200,
-        color="blue",
-        label="start",
-        edgecolors="black",
-    )
-
-    ax.scatter(
+    goal_handle = ax.scatter(
         [env.layout.goal[1]],
         [env.layout.goal[0]],
         marker="*",
@@ -915,23 +910,37 @@ def main():
     ax.set_ylabel("row")
 
     ax.set_title(
-        f"Disagreement severity by maze cell "
-        f"(πD* {ref.kind} vs. best-config PPO)\n"
-        f"green=agreement/no cost, red=larger PPO value loss; "
-        f"brown border=state not covered by D",
-        fontsize=11,
+        f"Disagreement severity by maze cell\n"
+        f"(\u03c0D* {ref.kind} vs. best-config PPO)",
+        fontsize=12,
     )
 
     fig.colorbar(
         sc,
         ax=ax,
         label=(
-            "normalized disagreement severity "
-            "(positive value gap; 95th-percentile scale)"
+            "normalized disagreement severity\n"
+            "(green=agree/no cost, red=larger PPO value loss)"
         ),
     )
 
+    # Not-covered-by-D border is not a scatter series of its own (it's an
+    # edge style on the main `sc` scatter), so it needs a manual legend
+    # proxy artist rather than relying on a `label=` kwarg.
+    not_covered_handle = plt.Line2D(
+        [0],
+        [0],
+        marker="s",
+        markersize=9,
+        markerfacecolor="none",
+        markeredgecolor="tab:blue",
+        markeredgewidth=1.0,
+        linestyle="None",
+        label="not covered by D",
+    )
+
     ax.legend(
+        handles=[hazard_handle, goal_handle, not_covered_handle],
         fontsize=8,
         loc="upper left",
         bbox_to_anchor=(1.2, 1.0),
