@@ -1271,19 +1271,19 @@ The next experiment should instead test whether the **magnitude of the initial `
 For every state where `π_D*` identifies a preferred action $a^*$, measure:
 
 $$
-p_{\beta}^{*}(s)=\pi_{\beta}(a^{*}|s)
+p_{\beta}^{\*}(s)=\pi_{\beta}(a^{\*}|s)
 $$
 
 and the corresponding final probability under the learned policy:
 
 $$
-p_{\theta}^{*}(s)=\pi_{\theta,\mathrm{final}}(a^{*}|s).
+p_{\theta}^{\*}(s)=\pi_{\theta,\mathrm{final}}(a^{\*}|s).
 $$
 
 The absolute correction made by PPO is:
 
 $$
-\Delta p^{*}(s) = p_\theta^{*}(s)-p_\beta^{*}(s).
+\Delta p^{\*}(s) = p_\theta^{\*}(s)-p_\beta^{\*}(s).
 $$
 
 More importantly, measure this correction relative to the correction that would be required to reach `π_D*`:
@@ -1291,9 +1291,9 @@ More importantly, measure this correction relative to the correction that would 
 $$ 
 C(s)=
 \frac{
-p_\theta^{*}(s)-p_\beta^{*}(s)
+p_\theta^{\*}(s)-p_\beta^{\*}(s)
 }{
-p_D^{*}(s)-p_\beta^{*}(s)
+p_D^{\*}(s)-p_\beta^{\*}(s)
 }.
 $$
 
@@ -1316,7 +1316,7 @@ The analysis should therefore test the relationship between the initial prior er
 A useful secondary analysis is to examine the **training trajectory across checkpoints saved at different epochs of the fixed $D$ PPO training**, rather than only the final policy. For each state, track
 
 $$
-\pi_\theta(a^{*}|s)-\pi_\beta(a^{*}|s)
+\pi_\theta(a^{\*}|s)-\pi_\beta(a^{\*}|s)
 $$
 
 throughout the fixed $D$ training. This reveals whether states with a strong prior error:
