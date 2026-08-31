@@ -1245,7 +1245,7 @@ Importantly, this hypothesis is **not equivalent to a clipping hypothesis**. PPO
 In our setting,
 
 $$
-r(a|s)=\frac{\pi_\theta(a|s)}{\pi_\beta(a|s)},
+r(a|s)=\frac{\pi_\theta(a|s)}{\pi_\beta(a|s)}
 $$
 
 so `π_β` defines the reference scale against which policy changes are measured. If `π_β` assigns substantially less probability to the action preferred by `π_D*`, then moving toward that action requires a larger *relative* change in the ratio than it would if the prior already favored that action. Thus, the prior's own errors can constrain the effective learning dynamics even when sufficient information about the correct action is present in `D`.
@@ -1283,16 +1283,13 @@ $$
 The absolute correction made by PPO is:
 
 $$
-\Delta p^*(s)
-=
-p_\theta^*(s)-p_\beta^*(s).
+\Delta p^*(s) = p_\theta^*(s)-p_\beta^*(s).
 $$
 
 More importantly, measure this correction relative to the correction that would be required to reach `π_D*`:
 
-$$
-C(s)
-=
+$$ 
+C(s)=
 \frac{
 p_\theta^*(s)-p_\beta^*(s)
 }{
@@ -1316,13 +1313,13 @@ In other words, states where `π_β` initially strongly disagrees with `π_D*` s
 
 The analysis should therefore test the relationship between the initial prior error and $C(s)$, while controlling for `coverage`. The same analysis should be performed under both definitions of `π_D*`.
 
-A useful secondary analysis is to examine the **training trajectory across checkpoints saved at different epochs of the fixed-$D$ PPO training**, rather than only the final policy. For each state, track
+A useful secondary analysis is to examine the **training trajectory across checkpoints saved at different epochs of the fixed $D$ PPO training**, rather than only the final policy. For each state, track
 
 $$
 \pi_\theta(a^*|s)-\pi_\beta(a^*|s)
 $$
 
-throughout the fixed-$D$ training. This reveals whether states with a strong prior error:
+throughout the fixed $D$ training. This reveals whether states with a strong prior error:
 
 * correct rapidly toward `π_D*`,
 * improve but plateau early,
