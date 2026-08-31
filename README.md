@@ -1126,7 +1126,7 @@ the scale.
 | | empirical | true-restricted |
 |---|---|---|
 | states (covered by D / total) | 351 / 887 | 351 / 887 |
-| argmax difference on | 462 | 464 |
+| argmax action difference | 462 | 464 |
 | **strict disagreement** (argmax differs AND value_gap > 0) | **54** | **47** |
 | of which covered by D | 54 (100%) | 47 (100%) |
 | of which statistically significant (z > 2.0) | 51 | 45 |
@@ -1172,8 +1172,9 @@ at that specific state, rather than the state as a whole:
   happened to land in `D`.
 
 `π_β`'s critic accuracy is deliberately not tested as a factor here: that
-the critic is imperfect is already this project's accepted premise (see
-below), not something a weak correlation needs to re-confirm.
+the critic is imperfect is already this project's accepted premise 
+(see the "Critic accuracy diagnostic" section and the Digression above), 
+not something a weak correlation needs to re-confirm.
 
 <div align="center">
 
