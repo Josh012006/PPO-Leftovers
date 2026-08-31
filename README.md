@@ -1073,6 +1073,157 @@ state, rather than only knowing the aggregate gap exists — the same kind
 of diagnostic the critic-accuracy check above did for `π_β`'s critic, now
 aimed at the policy gap itself.
 
+## Policy agreement: where do `π_D*` and our best config actually disagree?
+
+`scripts/analyze_policy_agreement.py` retrains the best configuration
+(`clip_eps=0.3`, `entropy_coef=0.01`, `gae_lambda=0.90`,
+`minibatch_size=64`), tracking the best live-eval checkpoint seen during
+training. For every non-terminal state (887 of the maze's 900 cells), it
+resets directly into that exact state via `env.set_state` and rolls out
+50 independent episodes with the resulting checkpoint's deterministic
+policy, accumulating a **discounted** return (`γ=0.99`, matching `π_D*`'s
+own discounted value from value iteration — comparing an undiscounted
+rollout return against a discounted `V(s)` was exactly the trap this
+project has avoided since its "discounted vs. undiscounted" note near the
+start).
+
+A state counts as a genuine disagreement only when BOTH hold: the argmax
+action differs from `π_D*`'s, AND the resulting value gap
+(`V_π_D*(s) - V_PPO(s)`) is positive — not when the gap merely clears a
+statistical-significance bar. An earlier version of this script required
+`value_gap > z_threshold * stderr` for a state to count at all; that
+conflated "detectable with 50 rollouts" with "actually costly," and
+silently dropped real but small-magnitude disagreements. Statistical
+significance (`z_threshold=2.0` by default) is now a separate diagnostic
+column (`statistically_significant`) that does not gate the map. Severity
+itself is normalized by the 95th percentile of positive gaps and clipped
+to `[0, 1]`, so a handful of extreme states don't wash out the rest of
+the scale.
+
+<div align="center">
+
+| | empirical | true-restricted |
+|---|---|---|
+| states (covered / total) | 351 / 887 | 351 / 887 |
+| argmax disagreement | 462 | 464 |
+| **disagreement** (argmax differs AND value_gap > 0) | **54** | **47** |
+| of which covered by D | 54 (100%) | 47 (100%) |
+| of which statistically significant (z > 2.0) | 51 | 45 |
+| mean severity, covered states | 0.066 | 0.056 |
+| mean severity, disagreement states only | 0.430 | 0.417 |
+
+</div>
+
+Both `π_D*` definitions agree closely on the size and severity of the
+disagreement — the same robustness pattern already seen in "Check 2"
+below: this is not an artifact of `D`'s own transition-probability
+estimation noise. Every disagreement state is, in both definitions, a
+state `D` actually covers — the phenomenon lives entirely inside the
+region where `D` has some information, not in the total blind spots.
+
+<div align="center">
+<img src="results/analysis/policy_agreement/policy_agreement_maze_map.svg" width="65%"><br><em>Disagreement severity by maze cell (empirical π_D*). Green = agreement / no cost; red = a larger PPO value loss at that state. Blank cells are states D never visited at all — no severity signal exists there, so they're left empty rather than colored. Square size scales with how many of the 4 actions D actually sampled at that state (never below a visible floor).</em>
+</div>
+
+`scripts/analyze_disagreement_factors.py` then tests, across the covered
+states, which of several candidate quantities actually track this
+severity — three purely structural properties of the maze (kept from the
+earlier, since-abandoned near-death framing because they generalize
+beyond this maze: distance to goal, distance to the nearest hazard, local
+connectivity), one raw exposure measure (`D`'s own coverage, log-scaled),
+and two measures of *how* `D` and `π_β` treated the two competing actions
+at that specific state, rather than the state as a whole:
+
+- `action_sample_gap`: `log1p(n(s, best-config's action)) - log1p(n(s, π_D*'s action))`,
+  from `D`'s raw `(state, action)` sample counts — realized, finite-sample
+  reinforcement.
+- `pi_beta_prob_gap`: `π_β(best-config's action | s) - π_β(π_D*'s action | s)`,
+  from `π_β`'s own actor (never its critic) — the underlying
+  behavior-policy probability that sets the scale of PPO's clipped
+  importance ratio for that action, independent of how many samples
+  happened to land in `D`.
+
+`π_β`'s critic accuracy is deliberately not tested as a factor here: that
+the critic is imperfect is already this project's accepted premise (see
+below), not something a weak correlation needs to re-confirm. Distance
+from the start was tested previously and dropped: under this script's
+per-state protocol every state IS the rollout start, so the notion
+doesn't apply.
+
+<div align="center">
+
+| factor | empirical (raw / partial\*) | true-restricted (raw / partial\*) |
+|---|---|---|
+| coverage (log, raw only) | +0.012 | −0.042 |
+| distance to goal | −0.058 / −0.059 | **−0.177 / −0.175** |
+| distance to nearest hazard | −0.080 / −0.088 | −0.067 / −0.057 |
+| local connectivity | −0.028 / −0.028 | −0.060 / −0.060 |
+| **action_sample_gap** | **+0.108 / +0.108** | **+0.180 / +0.189** |
+| **pi_beta_prob_gap** | **+0.216 / +0.218** | **+0.285 / +0.298** |
+
+\*partial = controlling for coverage.
+
+</div>
+
+<div align="center">
+<img src="results/analysis/disagreement_factors/disagreement_factors_bars.svg" width="65%"><br><em>Raw (gray) vs. partial (blue) correlation of each factor with disagreement severity, empirical π_D*. pi_beta_prob_gap and action_sample_gap are the only two factors that clear 0.1 in either π_D* definition; every purely geometric factor stays under 0.09.</em>
+</div>
+
+**What this points to.** `pi_beta_prob_gap` is the clearest and most
+robust signal under both `π_D*` definitions — notably stronger than any
+geometric factor, and stronger than raw coverage (close to 0 in both). It
+is also strongly collinear with `action_sample_gap` (`r=0.862` empirical,
+`r=0.851` true-restricted): the two are not independent evidence, they
+are two measurements of the same underlying quantity.
+`action_sample_gap` is the noisy, finite-sample proxy (how many times an
+action actually landed across `D`'s 4000 episodes); `pi_beta_prob_gap` is
+the smooth population parameter it's a proxy for (`π_β`'s actual action
+probability) — which is why the latter correlates more cleanly in both
+definitions.
+
+Put together: state by state, what differs between `π_D*` and the best
+configuration is not primarily geometric (hazard/goal distance are, at
+best, secondary, and inconsistent in size across the two `π_D*`
+definitions), and not primarily "how much data exists" in aggregate
+(`coverage` alone is close to 0 in both). It's **the skew `π_β` itself
+already had between the two competing actions at that state** — inherited
+unchanged into PPO's clipped update, since `π_old = π_β` stays frozen for
+the entire fixed-D training window. This is the most concrete answer so
+far to "where does the `~0.04` come from": not the critic, not the
+maze's geometry, but an asymmetry already present in the *behavior
+policy's own action distribution*, one that fixed-D PPO's single
+trust-region window has no mechanism to correct.
+
+One state pushes back against this story and is worth keeping on record
+rather than averaging away: state 320 (row 10, col 20, empirical) has
+`pi_beta_prob_gap = -0.956` and `action_sample_gap = -3.95` — `π_β`
+strongly preferred `π_D*`'s action, by a wide margin, and `D` sampled it
+far more often — yet the best configuration still ends up choosing the
+other action, at high severity (`0.845`). Low total coverage there (51
+samples) makes this plausibly a case where optimization noise overrides a
+strong prior rather than a genuine counterexample to the mechanism above,
+but that hasn't been checked, and the mechanism above does not explain it
+as it stands.
+
+### Is "fix the critic" actually the right next step? We talked ourselves out of it.
+
+The first instinct — recalibrate or periodically refresh `π_β`'s critic,
+using the errors just found — turns out to fall outside this project's
+own research question on closer inspection. `π_D*` itself never touches
+any critic: it is computed by exact value iteration on `D`'s raw
+transition counts, no function approximation anywhere. That it succeeds
+without ever needing an accurate *learned* value function is itself the
+point — a neural critic's inaccuracy is not an external nuisance PPO
+happens to suffer from, it is intrinsic to *how* PPO extracts information
+(a bootstrapped, generalizing approximation) versus how `π_D*` does
+(exact counting). Feeding PPO a deliberately-improved critic — whether
+recalibrated once before the fixed-D window or refreshed periodically
+during it — would mostly test "does PPO do better with a better critic,"
+which is close to tautological for any advantage-based method, and would
+not explain *why PPO's own mechanism* fails to extract the maximum from
+`D` as it actually receives it. That question was set aside for exactly
+this reason.
+
 <!-- ## Policy agreement: where do `π_D*` and our best config actually disagree?
 
 `scripts/analyze_policy_agreement.py` retrains the best configuration
