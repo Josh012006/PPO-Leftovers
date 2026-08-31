@@ -1271,13 +1271,13 @@ The next experiment should instead test whether the **magnitude of the initial `
 For every state where `π_D*` identifies a preferred action $a^*$, measure:
 
 $$
-p_\beta^*(s)=\pi_\beta(a^*|s)
+p_{\beta}^*(s)=\pi_{\beta}(a^*|s)
 $$
 
 and the corresponding final probability under the learned policy:
 
 $$
-p_\theta^*(s)=\pi_{\theta,\mathrm{final}}(a^*|s).
+p_{\theta}^*(s)=\pi_{\theta,\mathrm{final}}(a^*|s).
 $$
 
 The absolute correction made by PPO is:
