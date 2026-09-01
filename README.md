@@ -1234,142 +1234,62 @@ but that hasn't been checked, and the mechanism above does not explain it
 as it stands.
 
 
-## Next Steps: Testing Whether the Imperfect Behavior Policy Limits PPO's Correction
+## First hypothesis: prior asymmetry — rejected
 
-The current analysis suggests that the remaining disagreement between `π_D*` and the best configuration is primarily associated with an asymmetry already present in the behavior policy `π_β`. This motivates a more specific hypothesis:
+**Hypothesis.** Because `π_β` is imperfect, states where it initially
+favored the wrong action by a wide margin should see PPO recover a
+*smaller fraction* of that error — not just more residual error in
+absolute terms, but a shrinking correction fraction as the initial error
+grows.
 
-> **Hypothesis:** because the behavior policy `π_β` achieves only ~35% success, its action distribution contains substantial state-dependent errors. When `π_old = π_β` is frozen throughout the fixed-D PPO training window, these errors become the reference point for the policy update. Consequently, PPO may be unable to fully extract the information contained in `D` when the behavior policy initially assigns too little probability to the action preferred by `π_D*`. The resulting prior-induced asymmetry can therefore produce persistent disagreement between the learned policy and `π_D*`.
+**Method** (`scripts/analyze_prior_correction.py`). For every
+disagreement-relevant state, compare `π_β(a*|s)` (before training) against
+the best configuration's final `π_θ(a*|s)`, where `a*` is `π_D*`'s
+preferred action. Define `C(s)` = the fraction of the gap to full
+certainty on `a*` that PPO actually closed. Because `C(s)` is a ratio with
+`prior_error = 1 - π_β(a*|s)` in the denominator, its variance explodes as
+`prior_error → 0`; an unweighted fit is dominated by exactly the states
+where the ratio is least trustworthy. The script corrects this with
+weighted least squares (`weight = prior_error²`), checked for stability
+across a threshold-sensitivity sweep, and controls for `D` coverage
+throughout. Two versions of "how wrong was the prior" were tested:
+`prior_error` itself, and the sharper `pi_beta_prob_gap` (the gap against
+the *specific* action PPO ends up choosing, rather than all non-`a*`
+probability lumped together).
 
-Importantly, this hypothesis is **not equivalent to a clipping hypothesis**. PPO clipping limits how far the new policy can move relative to `π_old`; it does not remove or correct the asymmetry already encoded in `π_β`.
+**Result: no significant relationship, in either direction, for either
+variable, after the correction.**
 
-In our setting,
+<div align="center">
 
-$$
-r(a|s)=\frac{\pi_\theta(a|s)}{\pi_\beta(a|s)}
-$$
+| predictor | WLS coefficient | p-value |
+|---|---|---|
+| `prior_error` | −0.073 | 0.56 |
+| `pi_beta_prob_gap` | +0.021 | 0.77 |
 
-so `π_β` defines the reference scale against which policy changes are measured. If `π_β` assigns substantially less probability to the action preferred by `π_D*`, then moving toward that action requires a larger *relative* change in the ratio than it would if the prior already favored that action. Thus, the prior's own errors can constrain the effective learning dynamics even when sufficient information about the correct action is present in `D`.
+</div>
 
-### Why Increasing `clip_eps` Does Not Necessarily Solve the Problem
+<div align="center">
+<img src="results/analysis/prior_correction/prior_correction_scatter.svg" width="60%"><br><em>C(s) vs. prior_error(s). The unweighted OLS fit (dashed) is dragged into a misleading slope by states with a near-zero denominator; the corrected WLS fit (solid) is flat at ≈0 across the whole range.</em>
+</div>
 
-We have already tested larger values of `clip_eps`, and increasing the clipping range did not systematically eliminate the performance gap. This is consistent with the hypothesis above.
+A narrower, unweighted look at just the disagreement states themselves
+showed a stronger raw association (`r≈0.63`) — but it turned out to be
+driven almost entirely by one specific, separate pattern: 11 of the 14
+sharpest reversals (`π_β` already strongly favored `a*`, yet the final
+policy moved decisively away from it) share the exact same action-pair
+confusion (`π_D*` prefers RIGHT, the best configuration prefers LEFT —
+directly opposite directions), clustered along one band of the maze with
+noticeably sparser coverage. Not independent support for the asymmetry
+hypothesis — a distinct pattern, not yet understood, kept on record rather
+than pursued further here.
 
-A larger `clip_eps` only enlarges the allowable relative movement around the frozen reference policy `π_β`. It does **not** change the reference itself:
-
-$$
-\pi_{\mathrm{old}}=\pi_\beta.
-$$
-
-Therefore, increasing `clip_eps` does not remove the initial action-probability asymmetry in `π_β`. If the prior strongly prefers the wrong action at a state, a larger clipping range may give PPO more room to move, but it does not make the correct action more likely initially, nor does it remove the dependence of the ratio on `π_β`.
-
-Moreover, the effect of `clip_eps` should not necessarily be monotonic. A larger clipping range can allow larger updates, but it can also allow the policy to move further in directions supported by the existing prior distribution. Therefore, simply observing that a larger `clip_eps` does not close the gap is not sufficient to identify the mechanism.
-
-The next experiment should instead test whether the **magnitude of the initial `π_β` asymmetry predicts how difficult it is for PPO to move toward `π_D*`**.
-
-### Experiment: Prior Asymmetry → Learning Bias
-
-For every state where `π_D*` identifies a preferred action $a^*$, measure:
-
-$$
-p_{\beta}^{\*}(s)=\pi_{\beta}(a^{\*}|s)
-$$
-
-and the corresponding final probability under the learned policy:
-
-$$
-p_{\theta}^{\*}(s)=\pi_{\theta,\mathrm{final}}(a^{\*}|s).
-$$
-
-The absolute correction made by PPO is:
-
-$$
-\Delta p^{\*}(s) = p_\theta^{\*}(s)-p_\beta^{\*}(s).
-$$
-
-More importantly, measure this correction relative to the correction that would be required to reach `π_D*`:
-
-$$ 
-C(s)=
-\frac{
-p_\theta^{\*}(s)-p_\beta^{\*}(s)
-}{
-p_D^{\*}(s)-p_\beta^{\*}(s)
-}.
-$$
-
-This defines the fraction of the prior's initial error that PPO successfully corrects.
-
-The key prediction is:
-
-$$
-\boxed{
-\text{larger initial } \pi_\beta \text{ error}
-\quad\Longrightarrow\quad
-\text{smaller correction fraction } C
-}
-$$
-
-In other words, states where `π_β` initially strongly disagrees with `π_D*` should be precisely the states where PPO is least able to recover the target action.
-
-The analysis should therefore test the relationship between the initial prior error and $C(s)$, while controlling for `coverage`. The same analysis should be performed under both definitions of `π_D*`.
-
-A useful secondary analysis is to examine the **training trajectory across checkpoints saved at different epochs of the fixed $D$ PPO training**, rather than only the final policy. For each state, track
-
-$$
-\pi_\theta(a^{\*}|s)-\pi_\beta(a^{\*}|s)
-$$
-
-throughout the fixed $D$ training. This reveals whether states with a strong prior error:
-
-* correct rapidly toward `π_D*`,
-* improve but plateau early,
-* barely move from `π_β`, or
-* move in the wrong direction.
-
-
-### Statistical Test
-
-The primary statistical test should evaluate whether the initial prior error predicts the amount of correction achieved by PPO.
-
-For example:
-
-$$
-C(s)
-\sim
-\text{prior-error}(s)
-+
-\text{coverage}(s).
-$$
-
-Report the effect size, confidence interval, and significance of the prior-error coefficient.
-
-A strong result would be a statistically significant negative relationship: as the behavior policy's initial disagreement with `π_D*` increases, the fraction of the required correction recovered by PPO decreases, even after accounting for coverage.
-
-This would provide evidence for the proposed mechanism:
-
-$$
-\boxed{
-\text{imperfect } \pi_\beta
-\rightarrow
-\text{initial action-selection error}
-\rightarrow
-\text{incomplete PPO correction}
-\rightarrow
-\text{persistent disagreement}
-}
-$$
-
-### Controlled Prior Experiment
-
-If the observational analysis supports this prediction, the strongest follow-up would be a controlled experiment in which the initial action preference is deliberately varied while keeping the dataset `D`, target policy, environment, PPO objective, and training budget fixed.
-
-The goal is not simply to change `clip_eps`, but to test whether **the same learning problem becomes systematically harder when the initial policy is farther from the target policy**.
-
-If policies initialized with progressively stronger disagreement from `π_D*` recover progressively smaller fractions of the required correction, this would provide substantially stronger evidence that the behavior-policy prior itself is limiting PPO's ability to extract the optimal behavior from `D`.
-
-The existing state 320 counterexample should be particularly informative for this analysis. Because `π_β` strongly favors the `π_D*` action there (`pi_beta_prob_gap = -0.956`) while the final policy nevertheless strongly disagrees (`severity = 0.845`), the correction trajectory should reveal whether this is an optimization-noise/outlier case or evidence that prior asymmetry alone cannot explain the phenomenon.
-
-
+**Why coverage alone isn't the next thing to chase either.** `π_D*`
+(empirical) is computed from nothing but `D`'s own counts — it has no
+more information available to it than PPO does, and still reaches
+`0.992`. Whatever the residual `~0.04` gap is, "not enough data" cannot be
+the whole story on its own, since the same data supports a near-perfect
+policy under exact counting.
 
 
 ## Project structure
