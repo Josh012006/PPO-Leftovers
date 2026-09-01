@@ -246,6 +246,27 @@ def safe_corr(a: np.ndarray, b: np.ndarray) -> float:
     return float(np.corrcoef(a, b)[0, 1])
 
 
+def binned_relationship(x: np.ndarray, y: np.ndarray, n_bins: int = 8) -> pd.DataFrame:
+    """Quantile-binned median/mean/std of y against x -- a non-parametric
+    check of the actual shape of the relationship, since a near-zero
+    linear (WLS) coefficient only rules out a LINEAR relationship, not a
+    non-monotonic one. Median is reported alongside mean because C(s)'s
+    distribution is heavy-tailed by construction (a ratio with prior_error
+    in the denominator) -- the mean in the lowest bins can be dominated by
+    a handful of extreme values even after WLS correctly down-weights them
+    in the regression itself."""
+    tmp = pd.DataFrame({"x": x, "y": y})
+    tmp["bin"] = pd.qcut(tmp["x"], n_bins, duplicates="drop")
+    out = tmp.groupby("bin", observed=True).agg(
+        n=("y", "count"),
+        x_mid=("x", "median"),
+        mean_y=("y", "mean"),
+        median_y=("y", "median"),
+        std_y=("y", "std"),
+    )
+    return out.reset_index(drop=True)
+
+
 def _norm_cdf(z: np.ndarray) -> np.ndarray:
     return np.array([0.5 * (1.0 + math.erf(v / math.sqrt(2.0))) for v in np.atleast_1d(z)])
 
@@ -517,6 +538,7 @@ def main():
     df = pa.copy()
     states_arr = df["state"].to_numpy(dtype=int)
     a_star = df["pi_d_star_action"].to_numpy(dtype=int)
+    a_best = df["best_config_action"].to_numpy(dtype=int)
 
     df["total_samples"] = df["state"].map(lambda s: total_samples.get(int(s), 0))
     df["log_coverage"] = np.log1p(df["total_samples"])
@@ -525,6 +547,17 @@ def main():
     df["p_theta_star"] = theta_probs[states_arr, a_star]
     df["delta_p_star"] = df["p_theta_star"] - df["p_beta_star"]
     df["prior_error"] = 1.0 - df["p_beta_star"]
+
+    # pi_beta_prob_gap: same definition as analyze_disagreement_factors.py --
+    # pi_beta(best-config's actual action | s) - pi_beta(pi_D*'s action | s).
+    # Unlike prior_error = 1 - pi_beta(a*|s), which conflates "pi_beta is
+    # diffusely uncertain" with "pi_beta confidently prefers a specific
+    # wrong action", this measures the gap against the SPECIFIC competing
+    # action PPO ends up choosing -- closer to what the clipped ratio
+    # actually has to overcome. See README, "Policy agreement" for why this
+    # was already the strongest single correlate of disagreement severity
+    # found so far.
+    df["pi_beta_prob_gap"] = prior_probs[states_arr, a_best] - prior_probs[states_arr, a_star]
 
     valid_denom = (df["prior_error"] >= args.min_prior_error).to_numpy()
     c_vals = np.full(len(df), np.nan)
@@ -605,6 +638,75 @@ def main():
         f"before drawing a conclusion."
     )
 
+    # --- Binned (non-parametric) check: does a near-zero LINEAR coefficient
+    # actually mean "no relationship", or could it be masking something
+    # non-monotonic that WLS's linear specification can't see? Checked for
+    # both candidate independent variables below. ---
+    print("\n=== Binned relationship: prior_error vs. C (8 quantile bins, median more robust than mean) ===")
+    bins_pe = binned_relationship(prior_error, C)
+    print(bins_pe.to_string(index=False, float_format=lambda v: f"{v:+.3f}"))
+    bins_pe.to_csv(out_dir / "prior_correction_binned_prior_error.csv", index=False)
+
+    # --- Second candidate independent variable: pi_beta_prob_gap, same C(s)
+    # and same WLS weighting (weight=prior_error^2, since that heteroscedas-
+    # ticity comes from C's own denominator, not from whichever variable
+    # it's regressed against). This measures the gap against the SPECIFIC
+    # competing action PPO ends up choosing, rather than lumping all
+    # non-a* probability together the way prior_error = 1 - pi_beta(a*|s)
+    # does. ---
+    pi_beta_prob_gap = valid["pi_beta_prob_gap"].to_numpy(dtype=float)
+
+    ols_gap_df, ols_gap_r2, _ = ols_with_inference({"pi_beta_prob_gap": pi_beta_prob_gap, "log_coverage": coverage}, C)
+    wls_gap_df, wls_gap_r2, _ = wls_with_inference(
+        {"pi_beta_prob_gap": pi_beta_prob_gap, "log_coverage": coverage}, C, prior_error**2
+    )
+    ols_gap_df.insert(0, "method", "ols")
+    wls_gap_df.insert(0, "method", "wls")
+    ols_gap_df["r2"] = ols_gap_r2
+    wls_gap_df["r2"] = wls_gap_r2
+    reg_gap_df = pd.concat([ols_gap_df, wls_gap_df], ignore_index=True)
+    reg_gap_df.to_csv(out_dir / "prior_correction_regression_pi_beta_prob_gap.csv", index=False)
+
+    print(f"\n=== OLS: C(s) ~ pi_beta_prob_gap(s) + log_coverage(s)  (n={n_reg}, R^2={ols_gap_r2:.3f}) ===")
+    print(ols_gap_df.drop(columns=["method", "r2"]).to_string(index=False, float_format=lambda v: f"{v:+.4f}"))
+    print(
+        f"\n=== WLS, weight=prior_error\u00b2: C(s) ~ pi_beta_prob_gap(s) + log_coverage(s)  "
+        f"(n={n_reg}, R^2={wls_gap_r2:.3f}) ==="
+    )
+    print(wls_gap_df.drop(columns=["method", "r2"]).to_string(index=False, float_format=lambda v: f"{v:+.4f}"))
+    print(
+        "  (weighted by prior_error\u00b2 throughout: that weighting corrects for C(s)'s OWN "
+        "heteroscedasticity, which comes from prior_error sitting in C's denominator -- it "
+        "applies regardless of which variable C is regressed against.)"
+    )
+
+    raw_r_gap = safe_corr(pi_beta_prob_gap, C)
+    resid_gap = residualize(pi_beta_prob_gap, coverage)
+    partial_r_gap = safe_corr(resid_gap, resid_C)
+    print("\n=== pi_beta_prob_gap vs. C: raw vs. partial (controlling for coverage), UNWEIGHTED ===")
+    print(f"  raw r = {raw_r_gap:+.3f}   partial r (net of coverage) = {partial_r_gap:+.3f}")
+
+    print("\n=== Binned relationship: pi_beta_prob_gap vs. C (8 quantile bins) ===")
+    bins_gap = binned_relationship(pi_beta_prob_gap, C)
+    print(bins_gap.to_string(index=False, float_format=lambda v: f"{v:+.3f}"))
+    bins_gap.to_csv(out_dir / "prior_correction_binned_pi_beta_prob_gap.csv", index=False)
+
+    pd.DataFrame(
+        [
+            {"factor": "prior_error", "raw_r": raw_r, "partial_r_controlling_coverage": partial_r},
+            {"factor": "pi_beta_prob_gap", "raw_r": raw_r_gap, "partial_r_controlling_coverage": partial_r_gap},
+        ]
+    ).to_csv(out_dir / "prior_correction_summary.csv", index=False)
+    print(f"\nSaved {out_dir / 'prior_correction_summary.csv'}")
+
+    wls_coef_gap = wls_gap_df.loc[wls_gap_df["term"] == "pi_beta_prob_gap", "coef"].iloc[0]
+    wls_p_gap = wls_gap_df.loc[wls_gap_df["term"] == "pi_beta_prob_gap", "p_value_normal_approx"].iloc[0]
+    print(
+        f"\nSame prediction, restated for pi_beta_prob_gap (larger gap in PPO's favor away from "
+        f"a* -> smaller C), from WLS: coef={wls_coef_gap:+.4f}, p={wls_p_gap:.4f} "
+        f"({'significant' if wls_p_gap < 0.05 else 'not significant'} at 0.05)."
+    )
+
     highlight_row = valid[valid["state"] == HIGHLIGHT_STATE]
     highlight_xy = (
         (float(highlight_row["prior_error"].iloc[0]), float(np.clip(highlight_row["C"].iloc[0], -args.clip_c_plot, args.clip_c_plot)))
@@ -644,6 +746,40 @@ def main():
     fig.savefig(out_dir / "prior_correction_scatter.png", dpi=150)
     plt.close(fig)
     print(f"Saved {out_dir / 'prior_correction_scatter'}.svg/.png")
+
+    # --- Plot 1b: same C(s), against pi_beta_prob_gap instead of prior_error ---
+    highlight_row_gap = valid[valid["state"] == HIGHLIGHT_STATE]
+    highlight_xy_gap = (
+        (
+            float(highlight_row_gap["pi_beta_prob_gap"].iloc[0]),
+            float(np.clip(highlight_row_gap["C"].iloc[0], -args.clip_c_plot, args.clip_c_plot)),
+        )
+        if len(highlight_row_gap) > 0
+        else None
+    )
+    ols_gap_coef_arr = ols_gap_df["coef"].to_numpy(dtype=float)
+    wls_gap_coef_arr = wls_gap_df["coef"].to_numpy(dtype=float)
+    fig, ax = plt.subplots(figsize=(7, 6))
+    scatter_with_fit(
+        ax,
+        pi_beta_prob_gap,
+        C_plot,
+        disagree_mask,
+        xlabel="pi_beta_prob_gap(s) = \u03c0\u03b2(best-config action|s) \u2212 \u03c0\u03b2(a*|s)",
+        ylabel=f"C(s) = correction fraction{' (clipped to \u00b1' + str(args.clip_c_plot) + ')' if n_clipped else ''}",
+        title="Same C(s), against the gap vs. the SPECIFIC competing action instead",
+        highlight_xy=highlight_xy_gap,
+        ols_coef=ols_gap_coef_arr,
+        wls_coef=wls_gap_coef_arr,
+    )
+    ax.axhline(1.0, color="tab:green", linestyle="--", linewidth=1, alpha=0.7, label="C=1: fully corrected")
+    ax.axhline(0.0, color="0.4", linestyle="--", linewidth=1, alpha=0.7, label="C=0: no correction")
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(out_dir / "prior_correction_scatter_pi_beta_prob_gap.svg")
+    fig.savefig(out_dir / "prior_correction_scatter_pi_beta_prob_gap.png", dpi=150)
+    plt.close(fig)
+    print(f"Saved {out_dir / 'prior_correction_scatter_pi_beta_prob_gap'}.svg/.png")
 
     # --- Plot 2: same relationship with log_coverage residualized out ---
     # Unweighted / illustrative only -- read the WLS regression above (and the

@@ -1291,6 +1291,55 @@ more information available to it than PPO does, and still reaches
 the whole story on its own, since the same data supports a near-perfect
 policy under exact counting.
 
+## Second hypothesis: sparse pair-level data — confirmed for occurrence, not severity
+
+**Hypothesis.** PPO repeats gradient updates on the same frozen `D` for
+300 epochs; `π_D*` never does (each `(s,a)` pair is counted exactly once).
+A state-action pair backed by very little data could get "overfit" this
+way — repeated updates turning thin, possibly-unrepresentative evidence
+into strong conviction, something exact counting structurally cannot do.
+
+**Method.** Added pair-level sample counts to `policy_agreement.csv` /
+`disagreement_factors.csv` — not `coverage` (all 4 actions summed, already
+tested and found weak), but specifically how many times `D` showed the
+action `π_D*` prefers, the action the best configuration prefers, and the
+sparser of the two (`pair_min_samples`). Same raw/partial correlation
+methodology as every other factor, controlling for state-level coverage.
+
+**Result: predicts *whether* a state becomes a disagreement state, not
+*how severe* it is once it does.**
+
+<div align="center">
+
+| | value |
+|---|---|
+| partial `r`, sparser-pair coverage vs. severity (empirical `π_D*`) | −0.435 |
+| same, true-restricted `π_D*` (robustness check) | −0.326 |
+| disagreement rate, low- vs. high-pair-coverage half | 24.0% vs. 6.8% (odds ratio 4.3) |
+| raw `r`, restricted to disagreement states only | 0.155 (no clean trend) |
+
+</div>
+
+Binned by pair coverage (8 buckets, sparsest to densest), the disagreement
+rate drops from 37% to 0% — clean and close to monotonic. But among the
+54 states that *are* disagreements, pair coverage says almost nothing
+about how bad the gap is.
+
+<div align="center">
+<img src="results/analysis/policy_agreement/policy_agreement_severity_vs_pair_coverage.svg" width="60%"><br><em>Severity vs. sample count for PPO's chosen action. Visually diffuse — as with the maze map earlier, the real signal is in the aggregate occurrence-rate numbers above, not obvious from this scatter alone.</em>
+</div>
+
+<div align="center">
+<img src="results/analysis/disagreement_factors_pair_level/disagreement_factors_bars.svg" width="70%"><br><em>All seven candidate factors, raw vs. partial correlation with severity. The two pair-level factors (bottom two) are now the strongest of the batch.</em>
+</div>
+
+**Independent of the first hypothesis.** Pair coverage correlates weakly
+with both `prior_error` (`r=−0.202`) and `pi_beta_prob_gap` (`r=+0.105`) —
+far below the `0.644` those two share with each other. Sparse pair-level
+data is a distinct mechanism from prior asymmetry, not a restatement of
+it, though both leave the same signature: they gate *whether* PPO ends up
+wrong, not *how wrong*.
+
 
 ## Project structure
 
