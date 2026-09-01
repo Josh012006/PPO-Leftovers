@@ -142,6 +142,9 @@ statistically_significant
 true_value_pi_beta
 critic_pred_pi_beta
 critic_abs_error
+n_pi_d_star_action
+n_best_config_action
+pair_min_samples
 
 Here:
 
@@ -152,6 +155,15 @@ statistically_significant:
 1 if actions differ AND value_gap > z_threshold * stderr.
 
 The latter is a statistical diagnostic and does not suppress severity.
+
+n_pi_d_star_action / n_best_config_action / pair_min_samples:
+D's raw (state, action) sample count for pi_D*'s preferred action, for
+whichever action the best-config policy actually chose, and the smaller
+of the two -- distinct from n_actions_covered, which only counts how
+many of the 4 actions were sampled AT ALL. A state can look
+well-covered overall while the one action a policy ends up preferring
+there was seen only a handful of times. Feeds the second plot below and
+scripts/analyze_disagreement_factors.py's pair-level factors.
 
 Usage (retrain, first run):
 
@@ -200,7 +212,7 @@ import numpy as np
 import pandas as pd
 import torch
 
-from _analysis_lib import compute_ceiling_success_rate, run_single_analysis
+from _analysis_lib import compute_ceiling_success_rate, compute_sa_counts, run_single_analysis
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.eval.evaluate import make_neural_act_fn
@@ -438,6 +450,15 @@ def main():
             state_actions_seen.setdefault(int(s), set()).add(int(a))
 
     covered_states = set(state_actions_seen.keys())
+
+    # Pair-level (state, action) sample counts -- distinct from
+    # n_actions_covered (which only counts how many of the 4 actions were
+    # sampled at all). A state can look well-covered overall while the one
+    # specific action a policy ends up preferring there was seen only a
+    # handful of times: this is what scripts/analyze_disagreement_factors.py's
+    # pair-level factors (and the new plot below) actually test, following
+    # up on the "sparse-signal overfitting" hypothesis in the README.
+    sa_counts = compute_sa_counts(dataset)
 
     print(
         f"Loaded D: {len(dataset)} transitions, "
@@ -704,6 +725,10 @@ def main():
 
         r, c = env.layout.rc(s)
 
+        n_pi_d_star_action = sa_counts.get((s, pi_d_star_action), 0)
+        n_best_config_action = sa_counts.get((s, best_config_action), 0)
+        pair_min_samples = min(n_pi_d_star_action, n_best_config_action)
+
         rows.append(
             {
                 "state": s,
@@ -735,6 +760,9 @@ def main():
                         - true_value_pi_beta[s]
                     )
                 ),
+                "n_pi_d_star_action": n_pi_d_star_action,
+                "n_best_config_action": n_best_config_action,
+                "pair_min_samples": pair_min_samples,
             }
         )
 
@@ -1032,6 +1060,47 @@ def main():
     print(
         f"Saved {plot_path}.svg/.png"
     )
+
+    # ------------------------------------------------------------------
+    # Plot 2: severity vs. pair-level coverage (n_best_config_action) --
+    # the "sparse-signal overfitting" hypothesis in one picture: is
+    # disagreement severity concentrated where D showed the LOSING action
+    # only a handful of times, regardless of how well-covered the state
+    # is overall? x-axis is the sample count for whichever action the
+    # best-config policy actually ends up preferring (log1p-scaled, since
+    # this is heavily right-skewed like every other coverage measure in
+    # this project) -- for agreement states this is simply n(s, a*), for
+    # disagreement states it's specifically the count behind PPO's wrong
+    # choice. A cluster of high-severity points at the low-count end would
+    # support the hypothesis; severity spread evenly across the x-axis
+    # would not.
+    # ------------------------------------------------------------------
+    fig, ax = plt.subplots(figsize=(8, 6))
+    covered_df = df[df["covered"]]
+    disagree_mask_plot = covered_df["is_disagreement"].to_numpy(dtype=bool)
+    log_n_best = np.log1p(covered_df["n_best_config_action"].to_numpy(dtype=float))
+    ax.scatter(
+        log_n_best[~disagree_mask_plot], covered_df["severity"][~disagree_mask_plot],
+        s=16, alpha=0.5, color="0.6", label="agreement / no cost",
+    )
+    ax.scatter(
+        log_n_best[disagree_mask_plot], covered_df["severity"][disagree_mask_plot],
+        s=32, alpha=0.85, color="tab:red", label="disagreement state",
+    )
+    ax.set_xlabel("log(1 + samples in D for whichever action best-config actually chose)")
+    ax.set_ylabel("normalized disagreement severity")
+    ax.set_title(
+        "Is severity concentrated where PPO's chosen action was rarely observed?\n"
+        f"(\u03c0D* {ref.kind} vs. best-config PPO, covered states only)",
+        fontsize=11,
+    )
+    ax.legend(fontsize=8)
+    fig.tight_layout()
+    plot2_path = out_dir / "policy_agreement_severity_vs_pair_coverage"
+    fig.savefig(plot2_path.with_suffix(".svg"))
+    fig.savefig(plot2_path.with_suffix(".png"), dpi=150)
+    plt.close(fig)
+    print(f"Saved {plot2_path}.svg/.png")
 
 
 if __name__ == "__main__":

@@ -23,6 +23,27 @@ generalizable beyond this specific maze:
                      action get, purely from data volume, than the
                      actually-better action". Positive means D showed the
                      PPO-preferred action more often than pi_D*'s.
+  - log_n_best_config_action (log1p(n_samples(s, best_config_action))) --
+                     the RAW sparsity of whichever action the optimizer
+                     ends up preferring, not the gap against pi_D*'s
+                     action. Generalizes to "how much direct evidence
+                     supports the specific choice the learner converged
+                     on" -- a state can have a large action_sample_gap
+                     while still having plenty of absolute samples for
+                     both actions, or a small gap while both actions were
+                     seen only a handful of times each. Tests the
+                     "sparse-signal overfitting" hypothesis directly: does
+                     PPO end up confidently wrong specifically where its
+                     own preferred action had little direct reinforcement
+                     to begin with, regardless of how that compares to
+                     pi_D*'s action.
+  - log_pair_min_samples (log1p(min(n_samples(s, pi_d_star_action),
+                     n_samples(s, best_config_action)))) -- the sparser of
+                     the two competing actions specifically, as opposed to
+                     `coverage` (all 4 actions summed). A state can look
+                     well-covered in aggregate while the two actions that
+                     actually matter for this comparison were each seen
+                     only a few times.
   - pi_beta_prob_gap (pi_beta(best_config_action|s) -
                      pi_beta(pi_d_star_action|s), from the behavior
                      policy's own actor, not its critic) -- generalizes to
@@ -87,7 +108,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -101,7 +121,7 @@ import torch
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from _analysis_lib import goal_bfs_distance, hazard_bfs_distance, local_connectivity
+from _analysis_lib import compute_sa_counts, goal_bfs_distance, hazard_bfs_distance, local_connectivity
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.ppo.networks import ActorCritic
@@ -112,6 +132,8 @@ FACTOR_LABELS = {
     "hazard_distance": "distance to nearest hazard",
     "local_connectivity": "local connectivity (open walls)",
     "action_sample_gap": "action sample-count gap (log, best-config \u2212 \u03c0D*)",
+    "log_n_best_config_action": "raw sparsity of PPO's chosen action (log samples)",
+    "log_pair_min_samples": "sparser of the two competing actions (log samples)",
     "pi_beta_prob_gap": "\u03c0\u03b2 action-prob gap (best-config \u2212 \u03c0D*)",
 }
 
@@ -162,10 +184,7 @@ def main():
     print(f"Loaded {args.policy_agreement_csv}: {len(pa)} states.")
 
     dataset = load_dataset(args.dataset)
-    sa_counts: Counter[tuple[int, int]] = Counter()
-    for tr in dataset.trajectories:
-        for s, a in zip(tr.states.tolist(), tr.actions.tolist()):
-            sa_counts[(int(s), int(a))] += 1
+    sa_counts = compute_sa_counts(dataset)
     total_samples = {s: sum(sa_counts.get((s, a), 0) for a in range(env.n_actions)) for s in pa["state"]}
 
     prior_ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
@@ -207,6 +226,8 @@ def main():
     n_star = np.array([sa_counts.get((s, a), 0) for s, a in zip(states_arr, pi_d_star_actions)])
     n_best = np.array([sa_counts.get((s, a), 0) for s, a in zip(states_arr, best_config_actions)])
     df["action_sample_gap"] = np.log1p(n_best) - np.log1p(n_star)
+    df["log_n_best_config_action"] = np.log1p(n_best)
+    df["log_pair_min_samples"] = np.log1p(np.minimum(n_star, n_best))
 
     prob_star = prior_action_probs_full[states_arr, pi_d_star_actions]
     prob_best = prior_action_probs_full[states_arr, best_config_actions]
@@ -243,7 +264,15 @@ def main():
     summary_rows.append({"factor": "coverage", "raw_r": r_cov, "partial_r_controlling_coverage": None})
 
     print("\n=== other factors: raw vs. partial (controlling for coverage) ===")
-    for factor in ["goal_distance", "hazard_distance", "local_connectivity", "action_sample_gap", "pi_beta_prob_gap"]:
+    for factor in [
+        "goal_distance",
+        "hazard_distance",
+        "local_connectivity",
+        "action_sample_gap",
+        "log_n_best_config_action",
+        "log_pair_min_samples",
+        "pi_beta_prob_gap",
+    ]:
         x = df[factor].values.astype(float)
         raw_r = safe_corr(x, severity)
         if np.std(severity) == 0 or np.std(coverage) == 0:

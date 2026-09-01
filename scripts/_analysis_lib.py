@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import copy
 import pickle
-from collections import deque
+from collections import Counter, deque
 from pathlib import Path
 
 import matplotlib
@@ -26,6 +26,24 @@ import torch
 from ppo_exploitation.eval.evaluate import evaluate_policy, make_neural_act_fn, make_tabular_act_fn
 from ppo_exploitation.ppo.fixed_d_trainer import FixedDPPOTrainer
 from ppo_exploitation.utils.config import PPOHyperparams
+
+
+def compute_sa_counts(dataset) -> Counter:
+    """Raw (state, action) -> sample count in D, as a Counter. Used by
+    scripts/analyze_policy_agreement.py and
+    scripts/analyze_disagreement_factors.py for PAIR-level (not summed
+    over actions) coverage: a state can have high TOTAL coverage while the
+    one specific action a policy ends up preferring there was sampled
+    only a handful of times. (analyze_coverage_density.py and
+    analyze_prior_correction.py independently re-implement the
+    state-summed version of this same counting loop -- not yet
+    consolidated onto this helper, since they weren't touched by this
+    change.)"""
+    counts: Counter = Counter()
+    for tr in dataset.trajectories:
+        for s, a in zip(tr.states.tolist(), tr.actions.tolist()):
+            counts[(int(s), int(a))] += 1
+    return counts
 
 
 # --------------------------------------------------------------------------
