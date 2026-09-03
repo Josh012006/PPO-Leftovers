@@ -32,13 +32,20 @@ over the FIXED list of already-known disagreement states, at every
 --checkpoint-every epochs. Fast regardless of how many episodes-per-state
 the original analysis used.
 
-CHECKPOINTS ARE SAVED (by default): one *.pt per recorded epoch, under
---checkpoints-dir. Each is small (this project's networks are tiny), and
-saving them means never having to retrain from scratch just to compute a
-DIFFERENT per-checkpoint quantity later (a different diagnostic, a larger
-tracked-state set, etc.) -- only this one 300-epoch retrain is ever
-needed. Pass --no-save-checkpoints to skip this if disk space is a
-genuine concern.
+CHECKPOINTS ARE SAVED (by default, when retraining): one *.pt per
+recorded epoch, under --checkpoints-dir. Each is small (this project's
+networks are tiny), and saving them means never having to retrain from
+scratch just to compute a DIFFERENT per-checkpoint quantity later (a
+different diagnostic, a different tracked-state list, etc.). Pass
+--no-save-checkpoints to skip this if disk space is a genuine concern.
+
+REUSING SAVED CHECKPOINTS: pass --reuse-checkpoints-dir pointing at a
+checkpoints/ directory from a previous run to skip retraining entirely --
+e.g. to re-check the STRICT disagreement definition (--disagreement-column
+defaults to is_disagreement_strict, see scripts/analyze_policy_agreement.py)
+against the exact same already-trained run, in seconds. Only the (cheap)
+forward-pass recording is redone; no dataset, prior checkpoint, or
+FixedDPPOTrainer is even loaded in this mode.
 
 Outputs, under --out-dir (default results/analysis/disagreement_trajectory/):
   checkpoints/epoch_XXXX.pt         -- (unless --no-save-checkpoints) one
@@ -95,6 +102,7 @@ import torch
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.ppo.fixed_d_trainer import FixedDPPOTrainer
+from ppo_exploitation.ppo.networks import ActorCritic
 from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams
 from ppo_exploitation.utils.seeding import set_global_seed
 
@@ -138,6 +146,22 @@ def main():
         "0 (default) draws all of them -- fine up to the ~54 states this project has seen so "
         "far, but set this if a future disagreement set is much larger.",
     )
+    parser.add_argument(
+        "--reuse-checkpoints-dir",
+        default=None,
+        help="Path to a checkpoints/ directory saved by a previous run of this script "
+        "(--save-checkpoints, on by default). If given, retraining is skipped entirely: each "
+        "epoch_XXXX.pt found there is loaded directly and only the (cheap) forward-pass "
+        "recording is redone -- e.g. to re-check a DIFFERENT (e.g. stricter) tracked-state list "
+        "against the exact same training run, in seconds rather than another full retrain.",
+    )
+    parser.add_argument(
+        "--disagreement-column",
+        default="is_disagreement_strict",
+        help="Which policy_agreement.csv column selects the tracked states (state where this "
+        "column == 1). Falls back to 'is_disagreement' automatically if the given column isn't "
+        "present (e.g. an older CSV, or one made with --pi-d-star-cross-check '').",
+    )
     args = parser.parse_args()
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
@@ -155,35 +179,24 @@ def main():
     )
 
     pa = pd.read_csv(args.policy_agreement_csv)
-    tracked = pa[pa["is_disagreement"] == 1][["state", "pi_d_star_action"]].reset_index(drop=True)
+    disagreement_col = args.disagreement_column
+    if disagreement_col not in pa.columns:
+        print(f"'{disagreement_col}' not found in {args.policy_agreement_csv} -- falling back to 'is_disagreement'.")
+        disagreement_col = "is_disagreement"
+    tracked = pa[pa[disagreement_col] == 1][["state", "pi_d_star_action"]].reset_index(drop=True)
     tracked_states = tracked["state"].to_numpy(dtype=int)
     a_star_by_state = dict(zip(tracked["state"].tolist(), tracked["pi_d_star_action"].tolist()))
-    print(f"Tracking {len(tracked_states)} known disagreement states from {args.policy_agreement_csv}.")
+    print(f"Tracking {len(tracked_states)} states flagged by '{disagreement_col}' in {args.policy_agreement_csv}.")
     if len(tracked_states) == 0:
         print("No disagreement states found in that CSV -- nothing to track. Exiting.")
         return
-
-    dataset = load_dataset(args.dataset)
-    prior_ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
-    prior_state_dict = prior_ckpt["state_dict"]
-    print(f"Loaded prior checkpoint (final eval: {prior_ckpt['final_eval']})")
 
     with open(args.pi_d_star, "rb") as f:
         ref = pickle.load(f)
     print(f"Loaded pi_D* ({ref.kind}) from {args.pi_d_star}")
 
-    cfg = PPOHyperparams.from_yaml(args.best_config)
-    set_global_seed(cfg.seed)
-
-    trainer = FixedDPPOTrainer(
-        dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg, prior_state_dict=prior_state_dict
-    )
-
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    checkpoints_dir = Path(args.checkpoints_dir) if args.checkpoints_dir else out_dir / "checkpoints"
-    if args.save_checkpoints:
-        checkpoints_dir.mkdir(parents=True, exist_ok=True)
 
     obs_batch = np.stack([env.state_to_obs(s) for s in tracked_states]).astype(np.float32)
     obs_t = torch.as_tensor(obs_batch)
@@ -191,55 +204,113 @@ def main():
 
     rows: list[dict] = []
 
-    def save_checkpoint(epoch: int, net) -> None:
-        if not args.save_checkpoints:
+    # ----------------------------------------------------------------------
+    # Path A: reuse already-saved checkpoints (fast, no retraining, no
+    # dataset/prior/trainer needed at all -- just load each net and record).
+    # ----------------------------------------------------------------------
+    if args.reuse_checkpoints_dir:
+        ckpt_dir = Path(args.reuse_checkpoints_dir)
+        ckpt_files = sorted(ckpt_dir.glob("epoch_*.pt"))
+        if not ckpt_files:
+            print(f"No epoch_*.pt files found under {ckpt_dir} -- nothing to reuse. Exiting.")
             return
-        torch.save(
-            {
-                "state_dict": net.state_dict(),
-                "epoch": epoch,
-                "obs_dim": dataset.obs_dim,
-                "n_actions": dataset.n_actions,
-                "hidden_sizes": cfg.hidden_sizes,
-            },
-            checkpoints_dir / f"epoch_{epoch:04d}.pt",
+        print(f"\n--reuse-checkpoints-dir given: {len(ckpt_files)} checkpoints found under {ckpt_dir}, "
+              f"no retraining -- just re-running the forward-pass recording.\n")
+        for ckpt_path in ckpt_files:
+            ckpt = torch.load(ckpt_path, map_location="cpu", weights_only=False)
+            net = ActorCritic(ckpt["obs_dim"], ckpt["n_actions"], ckpt["hidden_sizes"])
+            net.load_state_dict(ckpt["state_dict"])
+            net.eval()
+            epoch = ckpt["epoch"]
+            with torch.no_grad():
+                logits, _ = net.forward(obs_t)
+                probs = torch.softmax(logits, dim=-1).numpy()
+            argmax_actions = probs.argmax(axis=1)
+            agrees = (argmax_actions == a_star_arr).astype(int)
+            prob_a_star = probs[np.arange(len(tracked_states)), a_star_arr]
+            for i, s in enumerate(tracked_states):
+                rows.append(
+                    {
+                        "epoch": epoch,
+                        "state": int(s),
+                        "pi_d_star_action": int(a_star_arr[i]),
+                        "argmax_action": int(argmax_actions[i]),
+                        "agrees": int(agrees[i]),
+                        "prob_pi_d_star_action": float(prob_a_star[i]),
+                    }
+                )
+            print(f"[epoch {epoch:4d}] {agrees.mean():.3f} of tracked states agree with pi_D*")
+        rows.sort(key=lambda r: r["epoch"])
+
+    # ----------------------------------------------------------------------
+    # Path B: retrain from scratch (original behavior, unchanged).
+    # ----------------------------------------------------------------------
+    else:
+        dataset = load_dataset(args.dataset)
+        prior_ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
+        prior_state_dict = prior_ckpt["state_dict"]
+        print(f"Loaded prior checkpoint (final eval: {prior_ckpt['final_eval']})")
+
+        cfg = PPOHyperparams.from_yaml(args.best_config)
+        set_global_seed(cfg.seed)
+
+        trainer = FixedDPPOTrainer(
+            dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg, prior_state_dict=prior_state_dict
         )
 
-    def record(epoch: int, net) -> float:
-        with torch.no_grad():
-            logits, _ = net.forward(obs_t)
-            probs = torch.softmax(logits, dim=-1).numpy()
-        argmax_actions = probs.argmax(axis=1)
-        agrees = (argmax_actions == a_star_arr).astype(int)
-        prob_a_star = probs[np.arange(len(tracked_states)), a_star_arr]
-        for i, s in enumerate(tracked_states):
-            rows.append(
+        checkpoints_dir = Path(args.checkpoints_dir) if args.checkpoints_dir else out_dir / "checkpoints"
+        if args.save_checkpoints:
+            checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+        def save_checkpoint(epoch: int, net) -> None:
+            if not args.save_checkpoints:
+                return
+            torch.save(
                 {
+                    "state_dict": net.state_dict(),
                     "epoch": epoch,
-                    "state": int(s),
-                    "pi_d_star_action": int(a_star_arr[i]),
-                    "argmax_action": int(argmax_actions[i]),
-                    "agrees": int(agrees[i]),
-                    "prob_pi_d_star_action": float(prob_a_star[i]),
-                }
+                    "obs_dim": dataset.obs_dim,
+                    "n_actions": dataset.n_actions,
+                    "hidden_sizes": cfg.hidden_sizes,
+                },
+                checkpoints_dir / f"epoch_{epoch:04d}.pt",
             )
-        save_checkpoint(epoch, net)
-        return float(agrees.mean())
 
-    frac0 = record(0, trainer.net)  # theta == pi_beta exactly here, before .train() runs
-    print(f"[epoch    0] {frac0:.3f} of tracked states already agree with pi_D* (pi_beta itself)")
+        def record(epoch: int, net) -> float:
+            with torch.no_grad():
+                logits, _ = net.forward(obs_t)
+                probs = torch.softmax(logits, dim=-1).numpy()
+            argmax_actions = probs.argmax(axis=1)
+            agrees = (argmax_actions == a_star_arr).astype(int)
+            prob_a_star = probs[np.arange(len(tracked_states)), a_star_arr]
+            for i, s in enumerate(tracked_states):
+                rows.append(
+                    {
+                        "epoch": epoch,
+                        "state": int(s),
+                        "pi_d_star_action": int(a_star_arr[i]),
+                        "argmax_action": int(argmax_actions[i]),
+                        "agrees": int(agrees[i]),
+                        "prob_pi_d_star_action": float(prob_a_star[i]),
+                    }
+                )
+            save_checkpoint(epoch, net)
+            return float(agrees.mean())
 
-    def eval_callback(epoch: int, net, summary: dict):
-        frac = record(epoch, net)
-        print(f"[epoch {epoch:4d}] {frac:.3f} of tracked states agree with pi_D*")
+        frac0 = record(0, trainer.net)  # theta == pi_beta exactly here, before .train() runs
+        print(f"[epoch    0] {frac0:.3f} of tracked states already agree with pi_D* (pi_beta itself)")
 
-    print(f"\nTraining {cfg.epochs} epochs, recording every {args.checkpoint_every}...\n")
-    trainer.train(verbose=False, eval_every_epochs=args.checkpoint_every, eval_callback=eval_callback)
+        def eval_callback(epoch: int, net, summary: dict):
+            frac = record(epoch, net)
+            print(f"[epoch {epoch:4d}] {frac:.3f} of tracked states agree with pi_D*")
 
-    if args.save_checkpoints:
-        n_saved = len(list(checkpoints_dir.glob("epoch_*.pt")))
-        print(f"\nSaved {n_saved} checkpoints under {checkpoints_dir}/ -- reusable for any later "
-              f"per-checkpoint analysis without retraining.")
+        print(f"\nTraining {cfg.epochs} epochs, recording every {args.checkpoint_every}...\n")
+        trainer.train(verbose=False, eval_every_epochs=args.checkpoint_every, eval_callback=eval_callback)
+
+        if args.save_checkpoints:
+            n_saved = len(list(checkpoints_dir.glob("epoch_*.pt")))
+            print(f"\nSaved {n_saved} checkpoints under {checkpoints_dir}/ -- reusable for any later "
+                  f"per-checkpoint analysis without retraining.")
 
     df = pd.DataFrame(rows)
     csv_path = out_dir / "disagreement_trajectory.csv"
