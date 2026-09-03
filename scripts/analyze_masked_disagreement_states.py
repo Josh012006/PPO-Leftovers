@@ -89,6 +89,13 @@ def main():
         "--best-config-checkpoint", default="results/analysis/policy_agreement/best_config_checkpoint.pt"
     )
     parser.add_argument("--policy-agreement-csv", default="results/analysis/policy_agreement/policy_agreement.csv")
+    parser.add_argument(
+        "--disagreement-column",
+        default="is_disagreement_strict",
+        help="Which policy_agreement.csv column selects the states to mask. Falls back to "
+        "'is_disagreement' automatically if the given column isn't present (e.g. an older CSV, "
+        "or one made with --pi-d-star-cross-check '').",
+    )
     parser.add_argument("--eval-episodes", type=int, default=500)
     parser.add_argument("--eval-seed", type=int, default=24680)
     parser.add_argument("--out-dir", default="results/analysis/masked_disagreement_states")
@@ -115,8 +122,12 @@ def main():
     print(f"Loaded D: {len(dataset)} transitions, {dataset.n_episodes} episodes.")
 
     pa = pd.read_csv(args.policy_agreement_csv)
-    mask_states = set(pa.loc[pa["is_disagreement"] == 1, "state"].astype(int).tolist())
-    print(f"Masking {len(mask_states)} known disagreement states from {args.policy_agreement_csv}.")
+    disagreement_col = args.disagreement_column
+    if disagreement_col not in pa.columns:
+        print(f"'{disagreement_col}' not found in {args.policy_agreement_csv} -- falling back to 'is_disagreement'.")
+        disagreement_col = "is_disagreement"
+    mask_states = set(pa.loc[pa[disagreement_col] == 1, "state"].astype(int).tolist())
+    print(f"Masking {len(mask_states)} states flagged by '{disagreement_col}' in {args.policy_agreement_csv}.")
     if len(mask_states) == 0:
         print("No disagreement states found -- nothing to mask. Exiting.")
         return
