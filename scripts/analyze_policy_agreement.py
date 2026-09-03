@@ -74,6 +74,32 @@ mechanism connecting disagreement to any specific state property is
 being established first (scripts/analyze_disagreement_factors.py), before
 revisiting that specific plot.
 
+## Why a second reference (--pi-d-star-cross-check)
+
+Empirical pi_D* is built from D's own (noisy, finite-sample) MLE
+transition counts -- exactly the kind of estimate that gets LESS
+reliable at the same low-coverage states this whole analysis is about.
+A state where best-config PPO's action differs from empirical pi_D*'s
+prescription, but MATCHES what the true-restricted definition (exact
+dynamics, no MLE noise) prescribes, is not evidence of a real PPO
+failure -- it is evidence the empirical reference itself was wrong there.
+Checked directly on this project's own data: of the states where the two
+pi_D* definitions disagree with EACH OTHER, PPO's choice matched the
+true-restricted (more trustworthy) action in the large majority of cases.
+
+`is_disagreement_strict` therefore requires BOTH `--pi-d-star` and
+`--pi-d-star-cross-check` to independently flag the same state as a
+disagreement (their own `argmax_disagree` and `value_gap > 0` conditions
+each hold). `severity_strict` is the smaller (more conservative) of the
+two references' own severities, normalized the same way as the
+single-reference `severity` was (95th-percentile scale, computed only
+over strictly-disagreeing states). Both plots below use the strict
+versions. The single-reference columns (`is_disagreement`, `severity`,
+...) are kept unchanged for backward compatibility and comparison -- pass
+`--pi-d-star-cross-check ""` to disable the cross-check entirely and fall
+back to single-reference behavior (`is_disagreement_strict ==
+is_disagreement`).
+
 ## Severity normalization
 
 The heatmap does NOT use the raw minimum/maximum over all states.
@@ -145,6 +171,17 @@ critic_abs_error
 n_pi_d_star_action
 n_best_config_action
 pair_min_samples
+pi_d_star_action_cross
+pi_d_star_V_cross
+argmax_disagree_cross
+rank_correlation_cross
+value_gap_cross
+is_disagreement_cross
+severity_raw_cross
+statistically_significant_cross
+is_disagreement_strict
+severity_raw_strict
+severity_strict
 
 Here:
 
@@ -351,6 +388,19 @@ def main():
     )
 
     parser.add_argument(
+        "--pi-d-star-cross-check",
+        default="results/pi_d_star_true_restricted.pkl",
+        help=(
+            "A second pi_D* definition, used to build a STRICTER "
+            "disagreement flag: a state only counts as a real "
+            "disagreement if BOTH --pi-d-star and this one agree PPO is "
+            "wrong there (see module docstring, 'Why a second reference'). "
+            "Pass an empty string to disable and fall back to the single- "
+            "reference behavior (is_disagreement_strict == is_disagreement)."
+        ),
+    )
+
+    parser.add_argument(
         "--reference-config",
         default="configs/reference.yaml",
     )
@@ -485,6 +535,21 @@ def main():
         f"Loaded pi_D* ({ref.kind}) from {args.pi_d_star}, "
         f"gamma={ref_cfg.gamma}"
     )
+
+    ref_cross = None
+    if args.pi_d_star_cross_check:
+        with open(args.pi_d_star_cross_check, "rb") as f:
+            ref_cross = pickle.load(f)
+        print(
+            f"Loaded cross-check pi_D* ({ref_cross.kind}) from "
+            f"{args.pi_d_star_cross_check} -- used to build the stricter "
+            f"is_disagreement_strict flag (see module docstring)."
+        )
+    else:
+        print(
+            "No --pi-d-star-cross-check given: is_disagreement_strict will "
+            "just equal is_disagreement (single-reference behavior)."
+        )
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -695,7 +760,8 @@ def main():
         value_gap = pi_d_star_V - mean_return
 
         # --------------------------------------------------------------
-        # New disagreement definition:
+        # Disagreement definition (single-reference, unchanged from
+        # before -- kept for backward compatibility / comparison):
         #
         # A state is a disagreement state when:
         #   1. actions differ
@@ -722,6 +788,50 @@ def main():
             argmax_disagree
             and value_gap > args.z_threshold * stderr
         )
+
+        # --------------------------------------------------------------
+        # Cross-check reference (see module docstring, "Why a second
+        # reference"): empirical pi_D* can be unreliable exactly at the
+        # low-coverage states this whole analysis is about -- its own MLE
+        # transition estimates are noisy there. A state where PPO's
+        # action matches what the TRUE-restricted definition (exact
+        # dynamics, no MLE noise) would prescribe is not a real PPO
+        # failure, even if it disagrees with the noisier empirical
+        # reference. is_disagreement_strict requires BOTH references to
+        # independently agree PPO is wrong -- the discounted rollout
+        # (the expensive part) is reused as-is; only an extra Q-array
+        # lookup and some arithmetic are needed per state.
+        # --------------------------------------------------------------
+        if ref_cross is not None:
+            q_star_cross = ref_cross.Q[s]
+            pi_d_star_action_cross = int(np.argmax(q_star_cross))
+            pi_d_star_V_cross = float(ref_cross.V[s])
+            argmax_disagree_cross = int(pi_d_star_action_cross != best_config_action)
+            rank_corr_cross = spearman_corr(q_star_cross, best_logits_np[k])
+            value_gap_cross = pi_d_star_V_cross - mean_return
+            is_disagreement_cross = int(argmax_disagree_cross and value_gap_cross > 0.0)
+            severity_raw_cross = max(0.0, value_gap_cross) if argmax_disagree_cross else 0.0
+            statistically_significant_cross = int(
+                argmax_disagree_cross and value_gap_cross > args.z_threshold * stderr
+            )
+            is_disagreement_strict = int(is_disagreement and is_disagreement_cross)
+            # The more conservative (smaller) of the two raw severities --
+            # only trusted when BOTH references independently flag a real,
+            # positive gap.
+            severity_raw_strict = (
+                min(severity_raw, severity_raw_cross) if is_disagreement_strict else 0.0
+            )
+        else:
+            pi_d_star_action_cross = None
+            pi_d_star_V_cross = None
+            argmax_disagree_cross = None
+            rank_corr_cross = None
+            value_gap_cross = None
+            is_disagreement_cross = None
+            severity_raw_cross = None
+            statistically_significant_cross = None
+            is_disagreement_strict = is_disagreement
+            severity_raw_strict = severity_raw
 
         r, c = env.layout.rc(s)
 
@@ -763,6 +873,17 @@ def main():
                 "n_pi_d_star_action": n_pi_d_star_action,
                 "n_best_config_action": n_best_config_action,
                 "pair_min_samples": pair_min_samples,
+                "pi_d_star_action_cross": pi_d_star_action_cross,
+                "pi_d_star_V_cross": pi_d_star_V_cross,
+                "argmax_disagree_cross": argmax_disagree_cross,
+                "rank_correlation_cross": rank_corr_cross,
+                "value_gap_cross": value_gap_cross,
+                "is_disagreement_cross": is_disagreement_cross,
+                "severity_raw_cross": severity_raw_cross,
+                "statistically_significant_cross": statistically_significant_cross,
+                "is_disagreement_strict": is_disagreement_strict,
+                "severity_raw_strict": severity_raw_strict,
+                "severity_strict": 0.0,
             }
         )
 
@@ -811,6 +932,27 @@ def main():
         severity_scale = 1.0
         df["severity"] = 0.0
 
+    # Same normalization, applied to the STRICT severity (its own 95th-
+    # percentile scale -- not reused from the empirical-only one above,
+    # since is_disagreement_strict is a smaller, differently-distributed
+    # subset of states).
+    positive_severities_strict = df.loc[
+        df["severity_raw_strict"] > 0.0,
+        "severity_raw_strict",
+    ].to_numpy(dtype=np.float64)
+
+    if len(positive_severities_strict) > 0:
+        severity_scale_strict = float(
+            np.quantile(positive_severities_strict, 0.95)
+        )
+        severity_scale_strict = max(severity_scale_strict, 1e-12)
+        df["severity_strict"] = np.clip(
+            df["severity_raw_strict"] / severity_scale_strict, 0.0, 1.0
+        )
+    else:
+        severity_scale_strict = 1.0
+        df["severity_strict"] = 0.0
+
     csv_path = out_dir / "policy_agreement.csv"
 
     df.to_csv(
@@ -826,6 +968,8 @@ def main():
         df["statistically_significant"].sum()
     )
 
+    n_disagree_strict = int(df["is_disagreement_strict"].sum())
+
     print("\n=== Summary ===")
 
     print(
@@ -839,10 +983,26 @@ def main():
     )
 
     print(
-        f"Actual disagreement "
+        f"Disagreement vs. {ref.kind} alone "
         f"(argmax differs AND PPO has a positive value gap): "
         f"{n_disagree} states"
     )
+
+    if ref_cross is not None:
+        n_disagree_cross = int(df["is_disagreement_cross"].sum())
+        print(
+            f"Disagreement vs. {ref_cross.kind} alone: {n_disagree_cross} states"
+        )
+        print(
+            f"STRICT disagreement (both {ref.kind} AND {ref_cross.kind} "
+            f"agree PPO is wrong): {n_disagree_strict} states"
+        )
+        print(
+            f"  dropped by the strict definition (flagged by {ref.kind} "
+            f"only): {n_disagree - n_disagree_strict} states -- these are "
+            f"the ones most likely to be empirical-reference noise rather "
+            f"than a real PPO error."
+        )
 
     print(
         f"  of which covered by D: "
@@ -903,7 +1063,7 @@ def main():
     )
 
     face_colors = cmap(
-        norm(df["severity"].to_numpy(dtype=float))
+        norm(df["severity_strict"].to_numpy(dtype=float))
     )
 
     face_colors[~covered_mask] = mcolors.to_rgba("white")
@@ -975,8 +1135,9 @@ def main():
     ax.set_ylabel("row")
 
     ax.set_title(
-        f"Disagreement severity by maze cell\n"
-        f"(\u03c0D* {ref.kind} vs. best-config PPO)",
+        f"Disagreement severity by maze cell (STRICT: {ref.kind} AND "
+        f"{ref_cross.kind if ref_cross is not None else ref.kind} both agree)\n"
+        f"best-config PPO vs. \u03c0D*",
         fontsize=12,
     )
 
@@ -1077,21 +1238,21 @@ def main():
     # ------------------------------------------------------------------
     fig, ax = plt.subplots(figsize=(8, 6))
     covered_df = df[df["covered"]]
-    disagree_mask_plot = covered_df["is_disagreement"].to_numpy(dtype=bool)
+    disagree_mask_plot = covered_df["is_disagreement_strict"].to_numpy(dtype=bool)
     log_n_best = np.log1p(covered_df["n_best_config_action"].to_numpy(dtype=float))
     ax.scatter(
-        log_n_best[~disagree_mask_plot], covered_df["severity"][~disagree_mask_plot],
+        log_n_best[~disagree_mask_plot], covered_df["severity_strict"][~disagree_mask_plot],
         s=16, alpha=0.5, color="0.6", label="agreement / no cost",
     )
     ax.scatter(
-        log_n_best[disagree_mask_plot], covered_df["severity"][disagree_mask_plot],
-        s=32, alpha=0.85, color="tab:red", label="disagreement state",
+        log_n_best[disagree_mask_plot], covered_df["severity_strict"][disagree_mask_plot],
+        s=32, alpha=0.85, color="tab:red", label="disagreement state (strict)",
     )
     ax.set_xlabel("log(1 + samples in D for whichever action best-config actually chose)")
-    ax.set_ylabel("normalized disagreement severity")
+    ax.set_ylabel("normalized disagreement severity (strict)")
     ax.set_title(
         "Is severity concentrated where PPO's chosen action was rarely observed?\n"
-        f"(\u03c0D* {ref.kind} vs. best-config PPO, covered states only)",
+        f"(STRICT disagreement, covered states only)",
         fontsize=11,
     )
     ax.legend(fontsize=8)

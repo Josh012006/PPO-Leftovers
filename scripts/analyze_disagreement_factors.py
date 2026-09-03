@@ -82,11 +82,15 @@ controlling for coverage is doing real, independent work; one that
 vanishes was likely just riding along with coverage.
 
 Requires policy_agreement.csv from a previous run of
-scripts/analyze_policy_agreement.py (any --pi-d-star variant; state-level
-severity doesn't depend on which one was used for that run's own
-disagreement flags, though results may differ slightly run to run), and
-the prior checkpoint (for pi_beta_prob_gap -- a fresh, cheap forward pass
-over all states, no rollout).
+scripts/analyze_policy_agreement.py -- by default the STRICT columns
+(`severity_strict`, `is_disagreement_strict`; see that script's own
+docstring, "Why a second reference") are used as the response variable,
+with automatic fallback to the single-reference `severity`/
+`is_disagreement` if the strict columns aren't present (older CSVs, or a
+policy_agreement.csv run with --pi-d-star-cross-check ""). Pass
+--severity-column / --disagreement-column to override explicitly. Also
+needs the prior checkpoint (for pi_beta_prob_gap -- a fresh, cheap forward
+pass over all states, no rollout).
 
 Outputs, under --out-dir (default results/analysis/disagreement_factors/):
   disagreement_factors.csv        -- per-state: every factor + severity
@@ -157,6 +161,18 @@ def main():
     )
     parser.add_argument("--out-dir", default="results/analysis/disagreement_factors")
     parser.add_argument(
+        "--severity-column",
+        default="severity_strict",
+        help="Response variable. Falls back to 'severity' automatically if this column isn't "
+        "in --policy-agreement-csv (e.g. an older run, or one made with "
+        "--pi-d-star-cross-check '').",
+    )
+    parser.add_argument(
+        "--disagreement-column",
+        default="is_disagreement_strict",
+        help="Same fallback behavior as --severity-column, to 'is_disagreement'.",
+    )
+    parser.add_argument(
         "--covered-only",
         action="store_true",
         default=True,
@@ -182,6 +198,16 @@ def main():
 
     pa = pd.read_csv(args.policy_agreement_csv)
     print(f"Loaded {args.policy_agreement_csv}: {len(pa)} states.")
+
+    severity_col = args.severity_column
+    if severity_col not in pa.columns:
+        print(f"'{severity_col}' not found in this CSV -- falling back to 'severity'.")
+        severity_col = "severity"
+    disagreement_col = args.disagreement_column
+    if disagreement_col not in pa.columns:
+        print(f"'{disagreement_col}' not found in this CSV -- falling back to 'is_disagreement'.")
+        disagreement_col = "is_disagreement"
+    print(f"Using '{severity_col}' as the response variable, '{disagreement_col}' for masking.")
 
     dataset = load_dataset(args.dataset)
     sa_counts = compute_sa_counts(dataset)
@@ -241,7 +267,7 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(out_dir / "disagreement_factors.csv", index=False)
 
-    severity = df["severity"].values
+    severity = df[severity_col].values
     coverage = df["log_coverage"].values
 
     def safe_corr(a: np.ndarray, b: np.ndarray) -> float:
