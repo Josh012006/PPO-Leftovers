@@ -1443,16 +1443,38 @@ pair-level sparsity effects) without ever establishing whether it costs
 anything real -- exactly the concern that motivated the visitation check
 in the first place.
 
-**Next: an environment with far fewer viable solution paths**, so that
-disagreeing with the reference policy has nowhere to hide. The leading
-candidate is a *perfect maze* (a spanning-tree layout, no cycles) instead
-of the current one's deliberately-added redundant connections
-(`extra_connection_prob`) -- a perfect maze guarantees exactly one simple
-path between any two cells, reusing nearly all of the existing
-environment code, solver, and training pipeline. This is a genuine second
-phase, not a continuation of this one: a new prior, a new `D`, a new
-`π_D*`, and likely a fresh hyperparameter pass, since a much less
-redundant task may respond differently to the same PPO settings. This
-document is retained as a complete, self-contained record of everything
-established on the original stochastic maze; the top-level README now
-carries only a summary and picks the story back up from here.
+**Next: a more controlled experiment, not simply a less redundant one.**
+A perfect maze (spanning-tree layout, no cycles) was the first candidate
+considered, but a single unique path removes exactly the gradation that
+made this phase's findings interesting in the first place -- with only
+one route, *every* disagreement becomes maximally severe by construction,
+and the question "does this specific disagreement cost anything" stops
+being answerable at all. What's wanted is controlled, low (not zero)
+redundancy -- a handful of good decisions, not one and not many -- kept
+as an independently tunable parameter rather than eliminated outright.
+
+Phase 1 also surfaced a second, previously unexamined gap: `D` and
+evaluation are drawn from the exact same fixed start and maze instance,
+with only the stochastic slip differing between episodes. This means
+"PPO overfits `D`" and "PPO generalizes well from `D`" are
+indistinguishable in every result reported so far -- both would produce
+the identical success_rate, since evaluation revisits literally the same
+distribution `D` was drawn from. No experiment in this phase could have
+detected overfitting even where it mattered, because none created the
+conditions to observe it.
+
+Phase 2 is designed around three explicit, independently controllable
+requirements this phase's design didn't have: the task must stay hard
+enough to require genuine training and real policy improvement (not
+solvable near-trivially); a limited, deliberately small number of good
+decisions, so disagreement with the reference policy is plainly visible
+in success_rate rather than absorbed by redundant paths; and overfitting
+to `D` must be directly observable, not merely assumed absent. See the
+top-level README for how each of these is addressed. This is a genuine
+second phase, not a continuation of this one: a new prior, a new `D`, a
+new `π_D*`, and likely a fresh hyperparameter pass, since a task with
+deliberately controlled redundancy and a variable start distribution may
+respond differently to the same PPO settings. This document is retained
+as a complete, self-contained record of everything established on the
+original stochastic maze; the top-level README now carries only a
+summary and picks the story back up from here.

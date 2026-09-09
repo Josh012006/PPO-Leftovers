@@ -88,14 +88,60 @@ ever takes.
 **Full write-up, every experiment, every result:**
 [docs/PHASE1_STOCHASTIC_MAZE.md](docs/PHASE1_STOCHASTIC_MAZE.md).
 
-## Phase 2: reducing path redundancy
+## Phase 2: a more controlled experiment
 
-Motivated by phase 1's finding that redundant paths absorb the cost of
-local disagreement with `π_D*`, phase 2 moves to an environment with far
-fewer viable solution paths -- the leading candidate being a *perfect
-maze* (spanning-tree layout, no cycles), which guarantees exactly one
-simple path between any two cells. This section will be written up here
-as phase 2 gets underway.
+Phase 1's disagreement investigation surfaced two problems with the
+original maze as a testbed, not with the findings themselves: `π_D*`
+(empirical) is a purely greedy, unregularized consumer of `D`'s raw
+counts, with its own known failure mode at thin-sample bottlenecks; and
+the maze's redundant paths let PPO disagree with that reference almost
+for free, since most disagreement states turned out to be off the path a
+real rollout ever takes. Phase 2 is designed around three explicit
+requirements this phase's design didn't have, each fixing a specific gap
+just identified:
+
+1. **The task must stay hard enough to require genuine training and real
+   policy improvement** -- not solvable near-trivially, or the whole
+   exploitation-gap question stops being meaningful.
+2. **A limited, deliberately small number of good decisions**, so that
+   disagreeing with the reference policy is plainly visible in
+   success_rate rather than absorbed by redundant paths -- this is what
+   phase 1's redundant maze could not provide.
+3. **Overfitting to `D` must be directly observable, not merely assumed
+   absent.** Phase 1 could not have detected overfitting even where it
+   mattered: `D` and evaluation were drawn from the exact same fixed
+   start and maze instance, so "PPO overfits `D`" and "PPO generalizes
+   well from `D`" would have produced an identical success_rate.
+
+**Our choice: keep the same maze, change how it's started and connected,
+rather than build a new environment.**
+
+1. **Controlled, non-zero redundancy**, via the existing
+   `extra_connection_prob` parameter, tuned to a handful of good routes
+   rather than one (a perfect, spanning-tree maze was considered and
+   rejected for this reason -- see docs/PHASE1_STOCHASTIC_MAZE.md's
+   closing section -- a single unique path makes every disagreement
+   maximally severe by construction, which removes the gradation phase
+   1's findings depended on). Addresses requirement 2.
+2. **A start-state distribution instead of a fixed start**, sampled
+   unevenly on purpose when collecting `D`: some starts oversampled, some
+   undersampled, a few withheld from `D` entirely. Evaluation then
+   reports success_rate separately for well-covered vs. rarely- or
+   never-seen starts -- a policy that excels on the former and collapses
+   on the latter is the direct, previously unobtainable signature of
+   overfitting. Addresses requirement 3.
+3. **Reuse of the existing environment, solver, and training pipeline.**
+   Value iteration already computes `V`/`Q` for every state regardless of
+   start, so `π_D*` needs no changes at all; only the reset logic, `D`
+   collection, and evaluation protocol need to change. This keeps the
+   task exactly as hard as phase 1's maze (same size, hazards, and
+   stochastic slip), addressing requirement 1 by construction rather than
+   by redesigning the task from scratch.
+
+This is a genuine second phase, not a continuation of the first: a new
+prior, a new `D`, a new `π_D*`, and likely a fresh hyperparameter pass.
+The full design (exact redundancy level, number and skew of start
+states) will be written up here as phase 2 gets underway.
 
 ## Project structure
 
