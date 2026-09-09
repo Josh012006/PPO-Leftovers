@@ -71,7 +71,7 @@ versus a genuine PPO limitation.
 **Unvisited `(s,a)` convention.** Any `(state, action)` pair never observed
 in `D` is routed, **during the DP solve only**, to a dedicated absorbing
 state with a large fixed negative reward (`unseen_penalty`, default `-50`,
-configured in `configs/reference.yaml`). This must be set more negative
+configured in `configs/phase1/reference.yaml`). This must be set more negative
 than any achievable real return so that greedy value iteration always
 prefers a *visited* action at a state whenever one exists. `D` supplies
 value iteration with a transition and reward **model** — how the
@@ -144,10 +144,10 @@ see "Evaluation is always live-rollout" above):
    (definition (ii) above).
 3. **PPO standard** — one rigorous PPO trust-region window on `D` (see
    below), with ordinary, unmodified hyperparameters
-   (`configs/ppo_fixed_d_standard.yaml`).
+   (`configs/phase1/ppo_fixed_d_standard.yaml`).
 4. **PPO modified** — the same trainer, same code path, with exactly one
    hyperparameter changed to test a specific hypothesis
-   (`configs/ppo_fixed_d_modified.yaml`, or any `configs/ppo_fixed_d_h*.yaml`
+   (`configs/phase1/ppo_fixed_d_modified.yaml`, or any `configs/ppo_fixed_d_h*.yaml`
    variant added later).
 
 `scripts/05_evaluate_all.py` produces one table with all four (plus the
@@ -207,8 +207,8 @@ analyses" at the bottom for what the multi-window scheme would still be
 useful for, as a separate, clearly-labeled question.
 
 **For now, standard PPO and modified PPO are the same code path.** They differ only
-in which YAML config is loaded (`configs/ppo_fixed_d_standard.yaml` vs.
-`configs/ppo_fixed_d_modified.yaml`) — this guarantees any measured
+in which YAML config is loaded (`configs/phase1/ppo_fixed_d_standard.yaml` vs.
+`configs/phase1/ppo_fixed_d_modified.yaml`) — this guarantees any measured
 difference in the resulting exploitation gap is attributable to the
 hyperparameter/mechanism that changed, never to an accidental code
 divergence.
@@ -232,7 +232,7 @@ advance. `FixedDPPOTrainer.train(verbose=True)` prints a note when
 
 The exploitation gap could come from the value/advantage-estimation side or
 the policy-optimization side. Every field below is a YAML-reachable knob in
-`configs/ppo_fixed_d_*.yaml` — no code changes needed to test any of these:
+`configs/phase1/ppo_fixed_d_*.yaml` — no code changes needed to test any of these:
 
 <div align="center">
 
@@ -248,7 +248,7 @@ the policy-optimization side. Every field below is a YAML-reachable knob in
 
 </div>
 
-`configs/ppo_fixed_d_modified.yaml` ships as a worked example testing H4
+`configs/phase1/ppo_fixed_d_modified.yaml` ships as a worked example testing H4
 (`epochs: 10 → 30`) with every other field held identical to the standard
 config — copy it as a template for testing any other single hypothesis
 (change exactly one field per copy, per the project's own "modify ONE
@@ -317,7 +317,7 @@ pytest tests/tier0/ -v     # just the cross-environment validation
 This is the first complete pipeline run and establishes the frozen base
 for the rest of this study: `π_β`, `D`, and both `π_D*` solutions below do
 not change as later sections test individual PPO modifications (H1–H7) —
-only the fixed-D PPO config varies from here on. `configs/ppo_fixed_d_modified.yaml`'s
+only the fixed-D PPO config varies from here on. `configs/phase1/ppo_fixed_d_modified.yaml`'s
 current value (`epochs: 30`) is an arbitrary placeholder inherited from
 earlier pipeline validation, not a chosen hypothesis — it is reported below
 for completeness only, and is revisited once a real testing path is
@@ -461,8 +461,8 @@ below.
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/success_return_clip_0_2.svg" width="100%"><br><em>success_rate &amp; mean_return vs. epoch, clip_eps=0.2. Dashed/dotted/dash-dot lines mark the prior, the exact π_D* ceiling, and this run's best observed success_rate.</em></td>
-<td width="50%"><img src="../results/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2. clip_frac never approaches saturation; entropy falls then climbs again well after the oscillation begins.</em></td>
+<td width="50%"><img src="../results/phase1/analysis/success_return_clip_0_2.svg" width="100%"><br><em>success_rate &amp; mean_return vs. epoch, clip_eps=0.2. Dashed/dotted/dash-dot lines mark the prior, the exact π_D* ceiling, and this run's best observed success_rate.</em></td>
+<td width="50%"><img src="../results/phase1/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2. clip_frac never approaches saturation; entropy falls then climbs again well after the oscillation begins.</em></td>
 </tr>
 </table>
 
@@ -475,12 +475,12 @@ above), everything else identical, to see how much of the ceiling
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/success_return_clip_0_1.svg" width="100%"><br><em>clip_eps=0.1 — best observed: 0.674 (epoch 15), mean over the run: 0.376</em></td>
-<td width="50%"><img src="../results/analysis/success_return_clip_0_2.svg" width="100%"><br><em>clip_eps=0.2 — best observed: 0.914 (epoch 35), mean over the run: 0.735</em></td>
+<td width="50%"><img src="../results/phase1/analysis/success_return_clip_0_1.svg" width="100%"><br><em>clip_eps=0.1 — best observed: 0.674 (epoch 15), mean over the run: 0.376</em></td>
+<td width="50%"><img src="../results/phase1/analysis/success_return_clip_0_2.svg" width="100%"><br><em>clip_eps=0.2 — best observed: 0.914 (epoch 35), mean over the run: 0.735</em></td>
 </tr>
 <tr>
-<td width="50%"><img src="../results/analysis/success_return_clip_0_3.svg" width="100%"><br><em>clip_eps=0.3 — best observed: 0.950 (epoch 190), mean over the run: 0.881</em></td>
-<td width="50%"><img src="../results/analysis/success_return_clip_0_4.svg" width="100%"><br><em>clip_eps=0.4 — best observed: 0.948 (epoch 40), mean over the run: 0.753</em></td>
+<td width="50%"><img src="../results/phase1/analysis/success_return_clip_0_3.svg" width="100%"><br><em>clip_eps=0.3 — best observed: 0.950 (epoch 190), mean over the run: 0.881</em></td>
+<td width="50%"><img src="../results/phase1/analysis/success_return_clip_0_4.svg" width="100%"><br><em>clip_eps=0.4 — best observed: 0.948 (epoch 40), mean over the run: 0.753</em></td>
 </tr>
 </table>
 
@@ -521,12 +521,12 @@ analyses" below.
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/clip_entropy_clip_0_1.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.1</em></td>
-<td width="50%"><img src="../results/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2</em></td>
+<td width="50%"><img src="../results/phase1/analysis/clip_entropy_clip_0_1.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.1</em></td>
+<td width="50%"><img src="../results/phase1/analysis/clip_entropy_clip_0_2.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.2</em></td>
 </tr>
 <tr>
-<td width="50%"><img src="../results/analysis/clip_entropy_clip_0_3.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.3</em></td>
-<td width="50%"><img src="../results/analysis/clip_entropy_clip_0_4.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.4</em></td>
+<td width="50%"><img src="../results/phase1/analysis/clip_entropy_clip_0_3.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.3</em></td>
+<td width="50%"><img src="../results/phase1/analysis/clip_entropy_clip_0_4.svg" width="100%"><br><em>clip_frac &amp; entropy vs. epoch, clip_eps=0.4</em></td>
 </tr>
 </table>
 
@@ -577,8 +577,8 @@ whatever causes it.
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/epochs_analysis_clip_0_3_ent_0_0_success_return.svg" width="100%"><br><em>entropy_coef=0.0 — repeated deep dives persist through epoch 300</em></td>
-<td width="50%"><img src="../results/analysis/epochs_analysis_clip_0_3_ent_0_1_success_return.svg" width="100%"><br><em>entropy_coef=0.1 — one early dip, then a stable plateau from ~epoch 50 on</em></td>
+<td width="50%"><img src="../results/phase1/analysis/epochs_analysis_clip_0_3_ent_0_0_success_return.svg" width="100%"><br><em>entropy_coef=0.0 — repeated deep dives persist through epoch 300</em></td>
+<td width="50%"><img src="../results/phase1/analysis/epochs_analysis_clip_0_3_ent_0_1_success_return.svg" width="100%"><br><em>entropy_coef=0.1 — one early dip, then a stable plateau from ~epoch 50 on</em></td>
 </tr>
 </table>
 
@@ -638,8 +638,8 @@ lower variance than the `0.95` default.
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_0_success_return.svg" width="100%"><br><em>gae_lambda=0.0 — collapses within ~5 epochs, never recovers</em></td>
-<td width="50%"><img src="../results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_90_success_return.svg" width="100%"><br><em>gae_lambda=0.90 — new best: highest ceiling, lowest variance yet</em></td>
+<td width="50%"><img src="../results/phase1/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_0_success_return.svg" width="100%"><br><em>gae_lambda=0.0 — collapses within ~5 epochs, never recovers</em></td>
+<td width="50%"><img src="../results/phase1/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_90_success_return.svg" width="100%"><br><em>gae_lambda=0.90 — new best: highest ceiling, lowest variance yet</em></td>
 </tr>
 </table>
 
@@ -683,7 +683,7 @@ percentage-point spread on mean) shouldn't be read as more than "this is
 a good, fairly wide plateau" — not "`0.90` is optimal to the decimal."
 
 <div align="center">
-<img src="../results/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_97_success_return.svg" width="50%"><br><em>gae_lambda=0.97 — deeper, more frequent dips than 0.90, foreshadowing the collapse seen at 1.0.</em>
+<img src="../results/phase1/analysis/epochs_analysis_clip_0_3_ent_0_01_gae_0_97_success_return.svg" width="50%"><br><em>gae_lambda=0.97 — deeper, more frequent dips than 0.90, foreshadowing the collapse seen at 1.0.</em>
 </div>
 
 **Confirmed best configuration: `clip_eps=0.3`, `entropy_coef=0.01`,
@@ -747,7 +747,7 @@ this pipeline's outcome, exactly as the mechanism above predicts.
 The single-axis `value_coef` sweep only ruled out interference at
 `max_grad_norm=0.5`. This cross sweep (run via the new `scripts/analyze_h7.py`,
 which accepts any `PPOHyperparams` YAML field as a list and runs the full
-cartesian product automatically — see `configs/ppo_fixed_d_h7_sweep.yaml`)
+cartesian product automatically — see `configs/phase1/ppo_fixed_d_h7_sweep.yaml`)
 tests the specific remaining possibility: does a *tighter* `max_grad_norm`
 surface the interference a looser one couldn't?
 
@@ -775,7 +775,7 @@ single-axis sweep alone: not just "no effect found," but "no effect found
 even where it was specifically sought."
 
 <div align="center">
-<img src="../results/analysis/h7/h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_1_success_return.svg" width="60%"><br><em>value_coef=1.0, max_grad_norm=0.1 — compare against the value_coef=0.0 run at the same max_grad_norm (README text above): same four dips, same envelope.</em>
+<img src="../results/phase1/analysis/h7/h7_clip_0_3_ent_0_01_gae_0_90_val_1_0_maxgrad_0_1_success_return.svg" width="60%"><br><em>value_coef=1.0, max_grad_norm=0.1 — compare against the value_coef=0.0 run at the same max_grad_norm (README text above): same four dips, same envelope.</em>
 </div>
 
 A smaller, secondary finding sits independent of `value_coef`:
@@ -830,8 +830,8 @@ level around epoch 190.
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_3eneg05_success_return.svg" width="100%"><br><em>lr=3e-05 — slow to get going; much of the 300-epoch budget spent below its own eventual plateau.</em></td>
-<td width="50%"><img src="../results/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_0_003_success_return.svg" width="100%"><br><em>lr=0.003 — gets there fast, cannot stay; the most chaotic run found in this project.</em></td>
+<td width="50%"><img src="../results/phase1/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_3eneg05_success_return.svg" width="100%"><br><em>lr=3e-05 — slow to get going; much of the 300-epoch budget spent below its own eventual plateau.</em></td>
+<td width="50%"><img src="../results/phase1/analysis/lr/lr_clip_0_3_ent_0_01_gae_0_90_lr_0_003_success_return.svg" width="100%"><br><em>lr=0.003 — gets there fast, cannot stay; the most chaotic run found in this project.</em></td>
 </tr>
 </table>
 
@@ -876,8 +876,8 @@ training:
 
 <table width="100%">
 <tr>
-<td width="50%"><img src="../results/analysis/minibatch/mb_clip_0_3_ent_0_01_gae_0_90_mb_1024_success_return.svg" width="100%"><br><em>minibatch_size=1024 — slow start (epoch-5=0.364) and the widest, most frequent dips of the sweep.</em></td>
-<td width="50%"><img src="../results/analysis/minibatch/mb_clip_0_3_ent_0_01_gae_0_90_mb_64_success_return.svg" width="100%"><br><em>minibatch_size=64 — same fast start as the reference, but visibly flatter from ~epoch 150 onward.</em></td>
+<td width="50%"><img src="../results/phase1/analysis/minibatch/mb_clip_0_3_ent_0_01_gae_0_90_mb_1024_success_return.svg" width="100%"><br><em>minibatch_size=1024 — slow start (epoch-5=0.364) and the widest, most frequent dips of the sweep.</em></td>
+<td width="50%"><img src="../results/phase1/analysis/minibatch/mb_clip_0_3_ent_0_01_gae_0_90_mb_64_success_return.svg" width="100%"><br><em>minibatch_size=64 — same fast start as the reference, but visibly flatter from ~epoch 150 onward.</em></td>
 </tr>
 </table>
 
@@ -931,7 +931,7 @@ critic overestimates by `+0.25` on average — substantial on a scale where
 typical returns sit around `0` to `1`.
 
 <div align="center">
-<img src="../results/analysis/critic_accuracy/critic_accuracy_scatter.svg" width="55%">
+<img src="../results/phase1/analysis/critic_accuracy/critic_accuracy_scatter.svg" width="55%">
 </div>
 
 The scatter reveals a specific, interpretable failure, not generic noise:
@@ -1084,7 +1084,7 @@ state `D` actually covers — the phenomenon lives entirely inside the
 region where `D` has some information, not in the total blind spots.
 
 <div align="center">
-<img src="../results/analysis/policy_agreement/policy_agreement_maze_map.svg" width="65%"><br><em>Disagreement severity by maze cell (empirical π_D*). Green = agreement / no cost; red = a larger PPO value loss at that state. Blank cells are states D never visited at all — no severity signal exists there, so they're left empty rather than colored. Square size scales with how many of the 4 actions D actually sampled at that state (never below a visible floor).</em>
+<img src="../results/phase1/analysis/policy_agreement/policy_agreement_maze_map.svg" width="65%"><br><em>Disagreement severity by maze cell (empirical π_D*). Green = agreement / no cost; red = a larger PPO value loss at that state. Blank cells are states D never visited at all — no severity signal exists there, so they're left empty rather than colored. Square size scales with how many of the 4 actions D actually sampled at that state (never below a visible floor).</em>
 </div>
 
 <br/>
@@ -1134,7 +1134,7 @@ not something a weak correlation needs to re-confirm.
 </div>
 
 <div align="center">
-<img src="../results/analysis/disagreement_factors/disagreement_factors_bars.svg" width="65%"><br><em>Raw (gray) vs. partial (blue) correlation of each factor with disagreement severity, empirical π_D*. pi_beta_prob_gap and action_sample_gap are the only two factors that clear 0.1 in either π_D* definition; every purely geometric factor stays under 0.09.</em>
+<img src="../results/phase1/analysis/disagreement_factors/disagreement_factors_bars.svg" width="65%"><br><em>Raw (gray) vs. partial (blue) correlation of each factor with disagreement severity, empirical π_D*. pi_beta_prob_gap and action_sample_gap are the only two factors that clear 0.1 in either π_D* definition; every purely geometric factor stays under 0.09.</em>
 </div>
 
 <br/>
@@ -1212,7 +1212,7 @@ variable, after the correction.**
 </div>
 
 <div align="center">
-<img src="../results/analysis/prior_correction/prior_correction_scatter.svg" width="60%"><br><em>C(s) vs. prior_error(s). The unweighted OLS fit (dashed) is dragged into a misleading slope by states with a near-zero denominator; the corrected WLS fit (solid) is flat at ≈0 across the whole range.</em>
+<img src="../results/phase1/analysis/prior_correction/prior_correction_scatter.svg" width="60%"><br><em>C(s) vs. prior_error(s). The unweighted OLS fit (dashed) is dragged into a misleading slope by states with a near-zero denominator; the corrected WLS fit (solid) is flat at ≈0 across the whole range.</em>
 </div>
 
 A narrower, unweighted look at just the disagreement states themselves
@@ -1268,11 +1268,11 @@ rate drops from 37% to 0% — clean and close to monotonic. But among the
 about how bad the gap is.
 
 <div align="center">
-<img src="../results/analysis/policy_agreement/policy_agreement_severity_vs_pair_coverage.svg" width="60%"><br><em>Severity vs. sample count for PPO's chosen action. Visually diffuse — as with the maze map earlier, the real signal is in the aggregate occurrence-rate numbers above, not obvious from this scatter alone.</em>
+<img src="../results/phase1/analysis/policy_agreement/policy_agreement_severity_vs_pair_coverage.svg" width="60%"><br><em>Severity vs. sample count for PPO's chosen action. Visually diffuse — as with the maze map earlier, the real signal is in the aggregate occurrence-rate numbers above, not obvious from this scatter alone.</em>
 </div>
 
 <div align="center">
-<img src="../results/analysis/disagreement_factors/disagreement_factors_bars.svg" width="70%"><br><em>All seven candidate factors, raw vs. partial correlation with severity. The two pair-level factors (bottom two) are now the strongest of the batch.</em>
+<img src="../results/phase1/analysis/disagreement_factors/disagreement_factors_bars.svg" width="70%"><br><em>All seven candidate factors, raw vs. partial correlation with severity. The two pair-level factors (bottom two) are now the strongest of the batch.</em>
 </div>
 
 **Independent of the first hypothesis.** Pair coverage correlates weakly
@@ -1332,7 +1332,7 @@ rate (epoch 155, `0.954`) -- before a partial, incomplete recovery to
 artifact of the 18 excluded states.
 
 <div align="center">
-<img src="../results/analysis/disagreement_trajectory/disagreement_trajectory_aggregate.svg" width="65%"><br><em>Fraction of the 36 strict disagreement states agreeing with π_D* (blue) and mean probability assigned to π_D*'s action (orange), across the 300-epoch fixed-D window.</em>
+<img src="../results/phase1/analysis/disagreement_trajectory/disagreement_trajectory_aggregate.svg" width="65%"><br><em>Fraction of the 36 strict disagreement states agreeing with π_D* (blue) and mean probability assigned to π_D*'s action (orange), across the 300-epoch fixed-D window.</em>
 </div>
 
 The individual per-state trajectories (`disagreement_trajectory_spaghetti.svg`)

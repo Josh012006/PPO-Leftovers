@@ -147,11 +147,14 @@ states) will be written up here as phase 2 gets underway.
 
 ```
 configs/                        # every experimental knob lives here, not in code
-  env_maze.yaml                  # maze layout, stochasticity, reward
-  prior_training.yaml            # online PPO config for the checkpoint that generates D
-  ppo_fixed_d_standard.yaml      # baseline fixed-D PPO hyperparameters
-  ppo_fixed_d_modified.yaml      # example H4 ablation (edit/copy for other hypotheses)
-  reference.yaml                 # pi_D* solver settings (gamma, unseen_penalty, VI tolerance)
+  phase1/                        # stochastic maze study (see docs/PHASE1_STOCHASTIC_MAZE.md)
+    env_maze.yaml                  # maze layout, stochasticity, reward
+    prior_training.yaml            # online PPO config for the checkpoint that generates D
+    ppo_fixed_d_standard.yaml      # baseline fixed-D PPO hyperparameters
+    ppo_fixed_d_modified.yaml      # example H4 ablation (edit/copy for other hypotheses)
+    reference.yaml                 # pi_D* solver settings (gamma, unseen_penalty, VI tolerance)
+    ...                            # (the rest of phase 1's sweep configs)
+  phase2/                        # controlled-redundancy / variable-start study (see "Phase 2" above)
 
 src/ppo_exploitation/
   envs/stochastic_maze.py        # the custom discrete stochastic maze
@@ -222,51 +225,51 @@ or step by step:
 ```bash
 # 1. Train the online PPO prior to ~35% success rate (live environment)
 python scripts/01_train_prior.py \
-    --env-config configs/env_maze.yaml \
-    --prior-config configs/prior_training.yaml \
-    --out results/prior_checkpoint.pt
+    --env-config configs/phase1/env_maze.yaml \
+    --prior-config configs/phase1/prior_training.yaml \
+    --out results/phase1/prior_checkpoint.pt
 
 # 2. Freeze that checkpoint, collect the fixed dataset D from it
 python scripts/02_collect_dataset.py \
-    --env-config configs/env_maze.yaml \
-    --checkpoint results/prior_checkpoint.pt \
+    --env-config configs/phase1/env_maze.yaml \
+    --checkpoint results/phase1/prior_checkpoint.pt \
     --n-episodes 4000 --seed 1 \
-    --out results/dataset_D.pkl
+    --out results/phase1/dataset_D.pkl
 
 # 3. Solve pi_D* exactly (both empirical and true-restricted definitions)
 python scripts/03_compute_pi_d_star.py \
-    --env-config configs/env_maze.yaml \
-    --reference-config configs/reference.yaml \
-    --dataset results/dataset_D.pkl \
-    --out-empirical results/pi_d_star_empirical.pkl \
-    --out-true-restricted results/pi_d_star_true_restricted.pkl
+    --env-config configs/phase1/env_maze.yaml \
+    --reference-config configs/phase1/reference.yaml \
+    --dataset results/phase1/dataset_D.pkl \
+    --out-empirical results/phase1/pi_d_star_empirical.pkl \
+    --out-true-restricted results/phase1/pi_d_star_true_restricted.pkl
 
 # 4. Train standard PPO and modified PPO on the SAME D and the SAME prior
 #    checkpoint (pi_old = pi_beta = this checkpoint throughout -- see
 #    "What fixed-D training means for PPO, operationally")
 python scripts/04_train_fixed_d_ppo.py \
-    --dataset results/dataset_D.pkl \
-    --ppo-config configs/ppo_fixed_d_standard.yaml \
-    --prior-checkpoint results/prior_checkpoint.pt \
-    --out results/ppo_standard_on_D.pt \
-    --history-out results/ppo_standard_on_D_history.csv
+    --dataset results/phase1/dataset_D.pkl \
+    --ppo-config configs/phase1/ppo_fixed_d_standard.yaml \
+    --prior-checkpoint results/phase1/prior_checkpoint.pt \
+    --out results/phase1/ppo_standard_on_D.pt \
+    --history-out results/phase1/ppo_standard_on_D_history.csv
 
 python scripts/04_train_fixed_d_ppo.py \
-    --dataset results/dataset_D.pkl \
-    --ppo-config configs/ppo_fixed_d_modified.yaml \
-    --prior-checkpoint results/prior_checkpoint.pt \
-    --out results/ppo_modified_on_D.pt \
-    --history-out results/ppo_modified_on_D_history.csv
+    --dataset results/phase1/dataset_D.pkl \
+    --ppo-config configs/phase1/ppo_fixed_d_modified.yaml \
+    --prior-checkpoint results/phase1/prior_checkpoint.pt \
+    --out results/phase1/ppo_modified_on_D.pt \
+    --history-out results/phase1/ppo_modified_on_D_history.csv
 
 # 5. Evaluate everything under the identical live-rollout protocol
 python scripts/05_evaluate_all.py \
-    --env-config configs/env_maze.yaml \
-    --prior-checkpoint results/prior_checkpoint.pt \
-    --pi-d-star-empirical results/pi_d_star_empirical.pkl \
-    --pi-d-star-true-restricted results/pi_d_star_true_restricted.pkl \
-    --ppo-checkpoints standard=results/ppo_standard_on_D.pt modified=results/ppo_modified_on_D.pt \
+    --env-config configs/phase1/env_maze.yaml \
+    --prior-checkpoint results/phase1/prior_checkpoint.pt \
+    --pi-d-star-empirical results/phase1/pi_d_star_empirical.pkl \
+    --pi-d-star-true-restricted results/phase1/pi_d_star_true_restricted.pkl \
+    --ppo-checkpoints standard=results/phase1/ppo_standard_on_D.pt modified=results/phase1/ppo_modified_on_D.pt \
     --n-episodes 500 --eval-seed 999 \
-    --out results/gap_report.csv
+    --out results/phase1/gap_report.csv
 ```
 
 `scripts/05_evaluate_all.py` accepts any number of `name=path` pairs after
@@ -276,13 +279,13 @@ compare every variant against the same `π_D*` reference in one table.
 
 ### Testing a new hypothesis
 
-1. Copy `configs/ppo_fixed_d_modified.yaml` to a new file
-   (e.g. `configs/ppo_fixed_d_h3_wide_clip.yaml`).
+1. Copy `configs/phase1/ppo_fixed_d_modified.yaml` to a new file
+   (e.g. `configs/phase1/ppo_fixed_d_h3_wide_clip.yaml`).
 2. Revert the field(s) already changed back to the standard value, then
    change exactly one field to test your hypothesis (e.g. `clip_eps: 0.2 →
    0.4` for H3).
-3. Re-run step 4 against the *same* `results/dataset_D.pkl` and the *same*
-   `results/prior_checkpoint.pt` with the new config, then add it to step
+3. Re-run step 4 against the *same* `results/phase1/dataset_D.pkl` and the *same*
+   `results/phase1/prior_checkpoint.pt` with the new config, then add it to step
    5's `--ppo-checkpoints` list.
 
 Never regenerate `D` or the prior checkpoint between comparison runs — the
