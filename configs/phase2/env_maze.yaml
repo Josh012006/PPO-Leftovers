@@ -1,0 +1,40 @@
+# Phase 2 study environment (see README, "Phase 2: a more controlled
+# experiment"). Same maze size/hazards/stochasticity as phase 1 -- only
+# extra_connection_prob (redundancy), step_penalty (see below), and
+# num_start_states (the overfitting-detection axis) differ. layout_seed
+# still fixes everything (walls, hazards, AND the K starts) -- keep it
+# identical across the entire pipeline (prior training, dataset
+# collection, pi_D* computation, evaluation) or the policies are
+# literally solving different mazes.
+width: 30
+height: 30
+slip_prob: 0.10
+# Verified via scripts/verify_redundancy_level.py: at 0.015 (WITH
+# step_penalty at -0.03 below), on-path states average ~1.9 near-optimal
+# actions (tolerance=0.02, itself calibrated to roughly "the value cost
+# of a one-step detour") -- squarely in the targeted "a handful, not one,
+# not many" range. This number alone does very little without
+# step_penalty at a large-enough magnitude -- see that field's comment.
+extra_connection_prob: 0.015
+num_hazards: 12
+# Raised in magnitude from phase 1's -0.01. At -0.01, EVERY action at
+# EVERY on-path state came out "near-optimal" (mean 3.3-4.0 out of 4)
+# regardless of extra_connection_prob, all the way down to 0.002 -- not
+# because the maze was highly redundant, but because slip_prob=0.10
+# already blends 10% of every action's outcome into a shared average,
+# and a step_penalty this small made the remaining 90% differ by only
+# ~0.02-0.04 in Q-value between the best and worst action at a typical
+# state (verified directly with scripts/verify_redundancy_level.py).
+# -0.03 was the smallest magnitude that let extra_connection_prob
+# actually differentiate "a handful" of good decisions from "many" --
+# re-verify with that script if either value changes.
+step_penalty: -0.03
+goal_reward: 1.0
+hazard_reward: -1.0
+max_steps: 200
+gamma: 0.99
+layout_seed: 0
+# The overfitting-detection axis (see README, "Phase 2", requirement 3).
+# See configs/phase2/start_tiers.yaml for how these 12 starts split into
+# well-covered / moderately-covered / held-out tiers for D collection.
+num_start_states: 12

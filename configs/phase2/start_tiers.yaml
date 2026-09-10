@@ -1,0 +1,16 @@
+# How the 12 starts (configs/phase2/env_maze.yaml's num_start_states) are
+# split for D collection -- see README, "Phase 2", requirement 3 and
+# scripts/verify_overfitting_detectable.py. Indices are positions into
+# env.layout.starts (0-based; index 0 is always (0,0), the phase-1-
+# compatible primary start).
+#
+# well_covered + moderately_covered get D's entire episode budget, split
+# by the two weights below (which must sum to 1.0). held_out_indices get
+# ZERO episodes when D is collected -- they exist purely so
+# eval/evaluate.py's eval_start_states can measure generalization to
+# them afterward, never seen during training at all.
+well_covered_indices: [0, 1, 2, 3]
+moderately_covered_indices: [4, 5, 6, 7]
+held_out_indices: [8, 9, 10, 11]
+well_covered_weight: 0.65
+moderately_covered_weight: 0.35

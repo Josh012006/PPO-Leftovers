@@ -1,0 +1,28 @@
+# "Standard PPO" fixed-D run -- ordinary, widely-used PPO hyperparameters,
+# applied to exactly ONE trust-region window on the static dataset D:
+# theta starts at pi_beta's weights, pi_old = pi_beta for the entire run
+# (never refreshed), and `epochs` epochs of clipped updates are run against
+# it, then training stops -- matching what real online PPO does with any
+# single collected batch before it moves on to fresh data. This is the
+# baseline against which every "modified PPO" config is compared; the
+# exploitation gap this config produces is J(pi_D*) - J(pi_standard_PPO).
+
+epochs: 10          # the swept hyperparameter -- how much PPO extracts
+                      # from D within the one window its own update rule
+                      # actually licenses. Kept at a typical real-PPO value.
+minibatch_size: 256
+
+# --- PPO objective ---
+clip_eps: 0.2
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+# --- optimization ---
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0

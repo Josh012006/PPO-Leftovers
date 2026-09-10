@@ -1,0 +1,7 @@
+# pi_D* computation (exact tabular value iteration).
+gamma: 0.99   # should match env_maze.yaml's gamma
+unseen_penalty: -50.0   # must be more negative than any real achievable
+                         # return so greedy VI always prefers a visited
+                         # action when one exists at a given state
+vi_theta: 1.0e-8
+vi_max_iter: 100000

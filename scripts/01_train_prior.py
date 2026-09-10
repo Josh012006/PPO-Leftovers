@@ -60,9 +60,9 @@ from ppo_exploitation.utils.seeding import set_global_seed
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-config", default="configs/env_maze.yaml")
-    parser.add_argument("--prior-config", default="configs/prior_training.yaml")
-    parser.add_argument("--out", default="results/prior_checkpoint.pt")
+    parser.add_argument("--env-config", default="configs/phase1/env_maze.yaml")
+    parser.add_argument("--prior-config", default="configs/phase1/prior_training.yaml")
+    parser.add_argument("--out", default="results/phase1/prior_checkpoint.pt")
     args = parser.parse_args()
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
@@ -81,6 +81,8 @@ def main():
             hazard_reward=env_cfg.hazard_reward,
             max_steps=env_cfg.max_steps,
             layout_seed=env_cfg.layout_seed,
+            num_start_states=env_cfg.num_start_states,
+            gamma=env_cfg.gamma,
         )
 
     probe_env = make_env()

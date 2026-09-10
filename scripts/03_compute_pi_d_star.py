@@ -4,11 +4,11 @@ iteration on D. Saves both ReferenceSolution objects.
 
 Usage:
     python scripts/03_compute_pi_d_star.py \
-        --env-config configs/env_maze.yaml \
-        --reference-config configs/reference.yaml \
-        --dataset results/dataset_D.pkl \
-        --out-empirical results/pi_d_star_empirical.pkl \
-        --out-true-restricted results/pi_d_star_true_restricted.pkl
+        --env-config configs/phase1/env_maze.yaml \
+        --reference-config configs/phase1/reference.yaml \
+        --dataset results/phase1/dataset_D.pkl \
+        --out-empirical results/phase1/pi_d_star_empirical.pkl \
+        --out-true-restricted results/phase1/pi_d_star_true_restricted.pkl
 """
 from __future__ import annotations
 
@@ -30,11 +30,11 @@ from ppo_exploitation.utils.config import MazeEnvConfig, ReferenceConfig
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-config", default="configs/env_maze.yaml")
-    parser.add_argument("--reference-config", default="configs/reference.yaml")
-    parser.add_argument("--dataset", default="results/dataset_D.pkl")
-    parser.add_argument("--out-empirical", default="results/pi_d_star_empirical.pkl")
-    parser.add_argument("--out-true-restricted", default="results/pi_d_star_true_restricted.pkl")
+    parser.add_argument("--env-config", default="configs/phase1/env_maze.yaml")
+    parser.add_argument("--reference-config", default="configs/phase1/reference.yaml")
+    parser.add_argument("--dataset", default="results/phase1/dataset_D.pkl")
+    parser.add_argument("--out-empirical", default="results/phase1/pi_d_star_empirical.pkl")
+    parser.add_argument("--out-true-restricted", default="results/phase1/pi_d_star_true_restricted.pkl")
     args = parser.parse_args()
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
@@ -50,8 +50,9 @@ def main():
         hazard_reward=env_cfg.hazard_reward,
         max_steps=env_cfg.max_steps,
         layout_seed=env_cfg.layout_seed,
+        num_start_states=env_cfg.num_start_states,
+        gamma=env_cfg.gamma,
     )
-    dataset = load_dataset(args.dataset)
     print(f"Loaded D: {len(dataset)} transitions, {dataset.n_episodes} episodes, coverage={dataset.coverage():.1%}")
 
     print("Solving empirical (MLE) pi_D* ...")

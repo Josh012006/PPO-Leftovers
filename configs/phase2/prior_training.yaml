@@ -1,0 +1,26 @@
+# Standard online PPO used ONLY to produce the frozen checkpoint that D is
+# collected from. Training stops the FIRST time eval success_rate crosses
+# target_success_rate AND an immediate independent re-check (different
+# seed) also clears it; if the re-check fails, training resumes and keeps
+# looking. Or total_iterations is reached, whichever first.
+total_iterations: 500
+rollout_steps: 4096   # total env steps collected per iteration, across all n_envs
+n_envs: 8
+gamma: 0.99
+gae_lambda: 0.95
+clip_eps: 0.2
+epochs: 10
+minibatch_size: 256
+lr: 0.0003
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+hidden_sizes: [64, 64]
+target_success_rate: 0.35
+eval_episodes: 500         # note: raising this meaningfully slows each eval check
+eval_every: 5
+near_target_zone_width: 0.10   # within 10pp below target -> switch to per-iteration checks
+tracking_eval_seed: 12345      # reused every periodic check -- cheap crossing signal
+confirmation_eval_seed: 54321  # used right after a crossing, on a genuinely
+                                # different sample -- tests that estimate's robustness
+seed: 0

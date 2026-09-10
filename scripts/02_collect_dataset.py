@@ -2,13 +2,22 @@
 D is collected once and never touched again -- every later stage reads this
 exact file.
 
-Usage:
+Usage (phase 1, unaffected -- single fixed start):
     python scripts/02_collect_dataset.py \
-        --env-config configs/env_maze.yaml \
-        --checkpoint results/prior_checkpoint.pt \
+        --env-config configs/phase1/env_maze.yaml \
+        --checkpoint results/phase1/prior_checkpoint.pt \
         --n-episodes 4000 \
         --seed 1 \
-        --out results/dataset_D.pkl
+        --out results/phase1/dataset_D.pkl
+
+Usage (phase 2 -- deliberately skewed start coverage):
+    python scripts/02_collect_dataset.py \
+        --env-config configs/phase2/env_maze.yaml \
+        --checkpoint results/phase2/prior_checkpoint.pt \
+        --start-tiers-config configs/phase2/start_tiers.yaml \
+        --n-episodes 4000 \
+        --seed 1 \
+        --out results/phase2/dataset_D.pkl
 """
 from __future__ import annotations
 
@@ -20,17 +29,17 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 import torch
 
-from ppo_exploitation.data.collect import collect_fixed_dataset, save_dataset
+from ppo_exploitation.data.collect import collect_fixed_dataset, make_tiered_start_sampler, save_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.ppo.networks import ActorCritic
-from ppo_exploitation.utils.config import MazeEnvConfig
+from ppo_exploitation.utils.config import MazeEnvConfig, StartTierConfig
 from ppo_exploitation.utils.seeding import set_global_seed
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-config", default="configs/env_maze.yaml")
-    parser.add_argument("--checkpoint", default="results/prior_checkpoint.pt")
+    parser.add_argument("--env-config", default="configs/phase1/env_maze.yaml")
+    parser.add_argument("--checkpoint", default="results/phase1/prior_checkpoint.pt")
     parser.add_argument("--n-episodes", type=int, default=4000)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument(
@@ -39,7 +48,15 @@ def main():
         help="Collect using the checkpoint's argmax action instead of sampling "
         "(narrower, more repetitive D -- off by default, see data/collect.py docstring).",
     )
-    parser.add_argument("--out", default="results/dataset_D.pkl")
+    parser.add_argument(
+        "--start-tiers-config",
+        default=None,
+        help="Phase 2 only. If given, D's episodes are drawn from the well-covered/"
+        "moderately-covered start tiers with the weights in this file (held-out states get "
+        "ZERO episodes -- see configs/phase2/start_tiers.yaml). If omitted (phase 1's default), "
+        "every episode uses the env's own default reset -- the single fixed start, unchanged.",
+    )
+    parser.add_argument("--out", default="results/phase1/dataset_D.pkl")
     args = parser.parse_args()
 
     set_global_seed(args.seed)
@@ -55,6 +72,8 @@ def main():
         hazard_reward=env_cfg.hazard_reward,
         max_steps=env_cfg.max_steps,
         layout_seed=env_cfg.layout_seed,
+        num_start_states=env_cfg.num_start_states,
+        gamma=env_cfg.gamma,
     )
 
     ckpt = torch.load(args.checkpoint, map_location="cpu", weights_only=False)
@@ -63,8 +82,25 @@ def main():
     net.eval()
     print(f"Loaded prior checkpoint (final eval: {ckpt['final_eval']})")
 
+    start_state_sampler = None
+    if args.start_tiers_config:
+        tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
+        start_state_sampler = make_tiered_start_sampler(env, tier_cfg)
+        print(
+            f"Using tiered start sampler from {args.start_tiers_config}: "
+            f"well-covered indices {tier_cfg.well_covered_indices} (weight {tier_cfg.well_covered_weight}), "
+            f"moderately-covered indices {tier_cfg.moderately_covered_indices} "
+            f"(weight {tier_cfg.moderately_covered_weight}), "
+            f"held-out indices {tier_cfg.held_out_indices} (0 episodes, by design)."
+        )
+
     dataset = collect_fixed_dataset(
-        env, net, n_episodes=args.n_episodes, seed=args.seed, sample_actions=not args.deterministic
+        env,
+        net,
+        n_episodes=args.n_episodes,
+        seed=args.seed,
+        sample_actions=not args.deterministic,
+        start_state_sampler=start_state_sampler,
     )
     print(
         f"Collected D: {len(dataset)} transitions across {dataset.n_episodes} episodes, "
