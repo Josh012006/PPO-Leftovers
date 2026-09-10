@@ -95,7 +95,7 @@ def main():
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
 
-    def make_env():
+    def make_env(layout=None):
         return StochasticMazeEnv(
             width=env_cfg.width,
             height=env_cfg.height,
@@ -109,6 +109,7 @@ def main():
             layout_seed=env_cfg.layout_seed,
             num_start_states=env_cfg.num_start_states,
             gamma=env_cfg.gamma,
+            layout=layout,  # same layout_seed => identical layout; skip regenerating when given
         )
 
     env = make_env()
@@ -156,10 +157,21 @@ def main():
     set_global_seed(prior_cfg.seed)
     agent = OnlinePPOAgent(env.observation_space.shape[0], env.n_actions, prior_cfg)
 
+    # Built ONCE, reused for the whole run -- see scripts/01_train_prior.py's
+    # identical fix for why rebuilding these every iteration (as this
+    # script originally did) turns a short verification run into
+    # something that can take hours: phase 2's environment now runs a
+    # rejection-sampling safety check at construction time that can take
+    # tens of seconds by itself, and collect_rollout previously called
+    # each env_fns[i]() fresh on every single call.
+    rollout_envs = [make_env(layout=env.layout) for _ in range(prior_cfg.n_envs)]
+    env_fns = [(lambda e=e: e) for e in rollout_envs]
+    track_env = make_env(layout=env.layout)
+
     training_rows = []
 
     def track(iteration: int):
-        res = evaluate_policy(make_env(), lambda obs, s: agent.net.act_numpy(obs, deterministic=True)[0],
+        res = evaluate_policy(track_env, lambda obs, s: agent.net.act_numpy(obs, deterministic=True)[0],
                                args.eval_episodes, seed=args.eval_seed)
         training_rows.append({"iteration": iteration, "success_rate": res["success_rate"]})
         print(f"  [iter {iteration:3d}] success_rate={res['success_rate']:.3f}")
@@ -167,7 +179,7 @@ def main():
     print(f"\nRunning {args.training_iterations} iterations of genuine online PPO training...")
     track(0)
     for it in range(1, args.training_iterations + 1):
-        trajectories = agent.collect_rollout([make_env for _ in range(prior_cfg.n_envs)])
+        trajectories = agent.collect_rollout(env_fns)
         agent.update(trajectories)
         if it % args.track_every == 0 or it == args.training_iterations:
             track(it)

@@ -92,6 +92,40 @@ def main():
     agent = OnlinePPOAgent(obs_dim, n_actions, prior_cfg)
     eval_env = make_env()
 
+    # Built ONCE, reused for the whole run -- NOT rebuilt inside the loop.
+    # OnlinePPOAgent.collect_rollout calls each env_fns[i]() fresh on
+    # every call (harmless when construction is instant, which it was for
+    # phase 1). Phase 2's environment now runs a rejection-sampling safety
+    # check at construction time (envs/stochastic_maze.py's
+    # _verify_and_redraw_hazards) that can take tens of seconds by itself
+    # -- reconstructing n_envs of these EVERY iteration turns a training
+    # run into something that can take hours longer than necessary.
+    # Since layout_seed is fixed, every make_env() call produces an
+    # IDENTICAL maze anyway; what actually needs to vary between rollouts
+    # is each env's internal position/timestep, which collect_rollout
+    # already resets itself via env.reset() -- cheap, unaffected by this
+    # change. Reusing the same n_envs instances throughout training is
+    # therefore exactly equivalent, just without the wasted reconstruction.
+    rollout_envs = [probe_env] + [
+        StochasticMazeEnv(
+            width=env_cfg.width,
+            height=env_cfg.height,
+            slip_prob=env_cfg.slip_prob,
+            extra_connection_prob=env_cfg.extra_connection_prob,
+            num_hazards=env_cfg.num_hazards,
+            step_penalty=env_cfg.step_penalty,
+            goal_reward=env_cfg.goal_reward,
+            hazard_reward=env_cfg.hazard_reward,
+            max_steps=env_cfg.max_steps,
+            layout_seed=env_cfg.layout_seed,
+            num_start_states=env_cfg.num_start_states,
+            gamma=env_cfg.gamma,
+            layout=probe_env.layout,  # same layout_seed => identical layout; skip regenerating it
+        )
+        for _ in range(prior_cfg.n_envs - 1)
+    ]
+    env_fns = [(lambda e=e: e) for e in rollout_envs]
+
     print(
         f"Stopping rule: the FIRST time success_rate >= {prior_cfg.target_success_rate:.2f} "
         f"(tracking seed={prior_cfg.tracking_eval_seed}), immediately re-check the same checkpoint "
@@ -108,7 +142,6 @@ def main():
 
     t0 = time.time()
     for it in range(prior_cfg.total_iterations):
-        env_fns = [make_env for _ in range(prior_cfg.n_envs)]
         trajectories = agent.collect_rollout(env_fns)
         stats = agent.update(trajectories)
 
