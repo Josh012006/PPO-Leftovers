@@ -53,6 +53,7 @@ def main():
         num_start_states=env_cfg.num_start_states,
         gamma=env_cfg.gamma,
     )
+    dataset = load_dataset(args.dataset)
     print(f"Loaded D: {len(dataset)} transitions, {dataset.n_episodes} episodes, coverage={dataset.coverage():.1%}")
 
     print("Solving empirical (MLE) pi_D* ...")
