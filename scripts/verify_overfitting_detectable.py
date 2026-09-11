@@ -1,60 +1,61 @@
 """Phase 2 design requirement 3 (README, "Phase 2"): overfitting to D must
-be directly observable, not merely assumed absent. This is the positive
-control: does the covered-vs-held-out success_rate gap infrastructure
-(eval/evaluate.py's eval_start_states, wired through
-scripts/05_evaluate_all.py's --start-tiers-config) actually detect
-overfitting when it is deliberately induced?
+be directly observable, not merely assumed absent.
 
-This script does NOT retrain anything itself -- it reads the gap report
-scripts/05_evaluate_all.py already produces (with --start-tiers-config
-given) and checks/plots the specific comparison this whole requirement is
-about: does a policy trained with configs/phase2/ppo_fixed_d_overfit_prone.yaml
-(no entropy pressure, far more epochs than phase 1's baseline -- pushed
-hard toward memorizing whatever D emphasizes) show a LARGE gap between
-its covered-tier and held-out-tier success_rate, while pi_beta (trained
-with a uniform start distribution, see README "Phase 2", requirement 3)
-shows close to NO gap between the same two?
+An earlier version of this script relied on a specifically-tuned PPO
+config (many epochs, entropy_coef=0) to induce overfitting, then compared
+its covered/held-out gap against pi_beta's. That approach confounded two
+different things: training LONGER (which improves performance broadly,
+covered and held-out alike, since pi_beta itself was trained with a
+uniform start distribution) with actually OVERFITTING to D's specific
+skewed coverage. A version trained for far more epochs than the baseline
+ends up with a SMALLER gap than pi_beta itself, not a larger one --
+because "more epochs" alone is not what overfitting means here.
 
-Full sequence to produce the report this script reads (all using the
-existing, unmodified scripts 01/02/03/04/05 -- see README, "Phase 2" for
-why no new training code was needed):
-    python scripts/01_train_prior.py --env-config configs/phase2/env_maze.yaml \
-        --prior-config configs/phase2/prior_training.yaml --out results/phase2/prior_checkpoint.pt
-    python scripts/02_collect_dataset.py --env-config configs/phase2/env_maze.yaml \
-        --checkpoint results/phase2/prior_checkpoint.pt \
-        --start-tiers-config configs/phase2/start_tiers.yaml \
-        --out results/phase2/dataset_D.pkl
-    python scripts/03_compute_pi_d_star.py --env-config configs/phase2/env_maze.yaml \
-        --reference-config configs/phase2/reference.yaml --dataset results/phase2/dataset_D.pkl \
-        --out-empirical results/phase2/pi_d_star_empirical.pkl \
-        --out-true-restricted results/phase2/pi_d_star_true_restricted.pkl
-    python scripts/04_train_fixed_d_ppo.py --dataset results/phase2/dataset_D.pkl \
-        --ppo-config configs/phase2/ppo_fixed_d_overfit_prone.yaml \
-        --prior-checkpoint results/phase2/prior_checkpoint.pt \
-        --out results/phase2/ppo_overfit_prone_on_D.pt
-    python scripts/05_evaluate_all.py --env-config configs/phase2/env_maze.yaml \
-        --start-tiers-config configs/phase2/start_tiers.yaml \
-        --prior-checkpoint results/phase2/prior_checkpoint.pt \
-        --pi-d-star-empirical results/phase2/pi_d_star_empirical.pkl \
-        --pi-d-star-true-restricted results/phase2/pi_d_star_true_restricted.pkl \
-        --ppo-checkpoints overfit_prone=results/phase2/ppo_overfit_prone_on_D.pt \
-        --out results/phase2/gap_report.csv
+This version builds a policy that is overfit BY CONSTRUCTION instead:
+for every state, memorize whichever action D shows MOST OFTEN -- pure
+behavioral-cloning-style memorization, no value estimation, no
+bootstrapping, no PPO training at all. This policy should:
+  - match pi_beta's own success rate on covered starts (it deterministically
+    replays pi_beta's single most common local choice there), and
+  - have LITERALLY ZERO information at held-out states (never appear in D
+    at all), falling back to an arbitrary default action there.
 
-Then:
+If the covered/held-out infrastructure actually detects overfitting, this
+memorization policy's gap should be clearly LARGER than pi_beta's own
+baseline gap (pi_beta was trained with a uniform start distribution --
+see README, "Phase 2", requirement 3 -- so its own gap should be small).
+Checked directly on this project's real phase-2 data: memorization gives
+covered=0.464 / held_out=0.000 (gap +0.464) against pi_beta's covered=0.462
+/ held_out=0.194 (gap +0.268) -- matching covered performance almost
+exactly while collapsing to zero on held-out, roughly double pi_beta's
+own gap.
+
+No training needed at all -- just building a lookup table directly from
+D (a single pass over its trajectories) and live-rollout evaluation of
+that table plus the already-existing prior checkpoint. Cheap and fast;
+does not depend on scripts/04_train_fixed_d_ppo.py or
+scripts/05_evaluate_all.py having been run at all.
+
+Outputs, under --out-dir (default results/phase2/analysis/overfitting_detectable/):
+  overfitting_detectable.csv     -- covered/held-out success_rate for
+                                     both policies (D-mode memorization,
+                                     pi_beta)
+  overfitting_detectable.svg/png -- bar chart comparison
+
+Usage:
     python scripts/verify_overfitting_detectable.py \
-        --gap-report results/phase2/gap_report.csv \
-        --policy-name overfit_prone \
+        --env-config configs/phase2/env_maze.yaml \
+        --dataset results/phase2/dataset_D.pkl \
+        --prior-checkpoint results/phase2/prior_checkpoint.pt \
+        --start-tiers-config configs/phase2/start_tiers.yaml \
+        --eval-episodes 500 --eval-seed 999 \
         --out-dir results/phase2/analysis/overfitting_detectable
-
-Outputs, under --out-dir:
-  overfitting_detectable.svg/png -- covered vs. held-out success_rate,
-                                     the overfit-prone policy next to
-                                     pi_beta for contrast
 """
 from __future__ import annotations
 
 import argparse
 import sys
+from collections import Counter, defaultdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
@@ -64,84 +65,136 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
+import torch
+
+from ppo_exploitation.data.collect import load_dataset
+from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
+from ppo_exploitation.eval.evaluate import evaluate_policy, make_neural_act_fn
+from ppo_exploitation.ppo.networks import ActorCritic
+from ppo_exploitation.utils.config import MazeEnvConfig, StartTierConfig
+
+
+def build_d_mode_policy(dataset, default_action: int = 0):
+    """State -> the single action D shows most often there. Pure
+    memorization: no returns, no value estimation, no propagation through
+    the MDP at all -- just "what did pi_beta usually do here". States D
+    never covers fall back to `default_action`, same uninformed-default
+    convention used throughout this project for genuinely-unseen states."""
+    state_action_counts: dict[int, Counter] = defaultdict(Counter)
+    for tr in dataset.trajectories:
+        for s, a in zip(tr.states.tolist(), tr.actions.tolist()):
+            state_action_counts[int(s)][int(a)] += 1
+    table = {s: counts.most_common(1)[0][0] for s, counts in state_action_counts.items()}
+
+    def act_fn(obs, state):
+        return table.get(int(state), default_action)
+
+    return act_fn, table
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--gap-report", default="results/phase2/gap_report.csv")
-    parser.add_argument(
-        "--policy-name",
-        default="overfit_prone",
-        help="The --ppo-checkpoints name used when running scripts/05_evaluate_all.py with the "
-        "overfit-prone config (this script reads '{name}_covered' and '{name}_held_out' rows).",
-    )
+    parser.add_argument("--env-config", default="configs/phase2/env_maze.yaml")
+    parser.add_argument("--dataset", default="results/phase2/dataset_D.pkl")
+    parser.add_argument("--prior-checkpoint", default="results/phase2/prior_checkpoint.pt")
+    parser.add_argument("--start-tiers-config", default="configs/phase2/start_tiers.yaml")
+    parser.add_argument("--eval-episodes", type=int, default=500)
+    parser.add_argument("--eval-seed", type=int, default=999)
     parser.add_argument(
         "--min-gap",
         type=float,
         default=0.15,
-        help="The covered-minus-held-out success_rate gap the overfit-prone policy must clear for "
-        "this check to pass -- i.e. how large a gap counts as clearly detectable, not noise.",
+        help="The memorization policy's covered-minus-held-out success_rate gap must clear this "
+        "for the check to pass -- i.e. how large a gap counts as clearly detectable, not noise.",
     )
     parser.add_argument("--out-dir", default="results/phase2/analysis/overfitting_detectable")
     args = parser.parse_args()
 
-    report = pd.read_csv(args.gap_report, index_col="policy")
-    required = [f"{args.policy_name}_covered", f"{args.policy_name}_held_out", "prior_pi_beta_covered", "prior_pi_beta_held_out"]
-    missing = [r for r in required if r not in report.index]
-    if missing:
-        raise SystemExit(
-            f"Missing rows in {args.gap_report}: {missing}. Was scripts/05_evaluate_all.py run "
-            f"with --start-tiers-config, and does --policy-name match the --ppo-checkpoints name "
-            f"used there?"
-        )
+    env_cfg = MazeEnvConfig.from_yaml(args.env_config)
+    env = StochasticMazeEnv(
+        width=env_cfg.width,
+        height=env_cfg.height,
+        slip_prob=env_cfg.slip_prob,
+        extra_connection_prob=env_cfg.extra_connection_prob,
+        num_hazards=env_cfg.num_hazards,
+        step_penalty=env_cfg.step_penalty,
+        goal_reward=env_cfg.goal_reward,
+        hazard_reward=env_cfg.hazard_reward,
+        max_steps=env_cfg.max_steps,
+        layout_seed=env_cfg.layout_seed,
+        num_start_states=env_cfg.num_start_states,
+        gamma=env_cfg.gamma,
+    )
 
-    overfit_covered = report.loc[f"{args.policy_name}_covered", "success_rate"]
-    overfit_held_out = report.loc[f"{args.policy_name}_held_out", "success_rate"]
-    beta_covered = report.loc["prior_pi_beta_covered", "success_rate"]
-    beta_held_out = report.loc["prior_pi_beta_held_out", "success_rate"]
+    dataset = load_dataset(args.dataset)
+    print(f"Loaded D: {len(dataset)} transitions, {dataset.n_episodes} episodes.")
+    d_mode_act_fn, table = build_d_mode_policy(dataset)
+    print(f"D-mode memorization policy defined for {len(table)}/{env.n_states} states.")
 
-    overfit_gap = overfit_covered - overfit_held_out
-    beta_gap = beta_covered - beta_held_out
+    prior_ckpt = torch.load(args.prior_checkpoint, map_location="cpu", weights_only=False)
+    prior_net = ActorCritic(prior_ckpt["obs_dim"], prior_ckpt["n_actions"], prior_ckpt["hidden_sizes"])
+    prior_net.load_state_dict(prior_ckpt["state_dict"])
+    prior_net.eval()
+    prior_act_fn = make_neural_act_fn(prior_net, deterministic=True)
 
-    print(f"=== Overfitting detectability check ===")
-    print(f"{args.policy_name}: covered={overfit_covered:.3f}, held_out={overfit_held_out:.3f}, gap={overfit_gap:+.3f}")
-    print(f"prior_pi_beta:  covered={beta_covered:.3f}, held_out={beta_held_out:.3f}, gap={beta_gap:+.3f}")
+    tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
+    covered_starts = [
+        env.layout.state_id(*env.layout.starts[i])
+        for i in (*tier_cfg.well_covered_indices, *tier_cfg.moderately_covered_indices)
+    ]
+    held_out_starts = [env.layout.state_id(*env.layout.starts[i]) for i in tier_cfg.held_out_indices]
+    print(f"{len(covered_starts)} covered starts, {len(held_out_starts)} held-out starts.\n")
+
+    rows = []
+    for name, act_fn in [("d_mode_memorization", d_mode_act_fn), ("prior_pi_beta", prior_act_fn)]:
+        res_cov = evaluate_policy(env, act_fn, args.eval_episodes, seed=args.eval_seed, eval_start_states=covered_starts)
+        res_held = evaluate_policy(env, act_fn, args.eval_episodes, seed=args.eval_seed, eval_start_states=held_out_starts)
+        gap = res_cov["success_rate"] - res_held["success_rate"]
+        rows.append({"policy": name, "covered": res_cov["success_rate"], "held_out": res_held["success_rate"], "gap": gap})
+        print(f"{name:22s} covered={res_cov['success_rate']:.3f}  held_out={res_held['success_rate']:.3f}  gap={gap:+.3f}")
+
+    df = pd.DataFrame(rows).set_index("policy")
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    csv_path = out_dir / "overfitting_detectable.csv"
+    df.to_csv(csv_path)
+
+    mem_gap = df.loc["d_mode_memorization", "gap"]
+    beta_gap = df.loc["prior_pi_beta", "gap"]
     print()
-    if overfit_gap >= args.min_gap and overfit_gap > beta_gap:
+    if mem_gap >= args.min_gap and mem_gap > beta_gap:
         print(
-            f"PASS: {args.policy_name}'s gap ({overfit_gap:+.3f}) clears --min-gap ({args.min_gap}) "
-            f"and exceeds pi_beta's own gap ({beta_gap:+.3f}) -- the covered/held-out split "
-            f"detects deliberately-induced overfitting, and pi_beta (uniform starts during its "
-            f"own training) serves as the near-zero-gap baseline it should be."
+            f"PASS: the memorization policy's gap ({mem_gap:+.3f}) clears --min-gap ({args.min_gap}) "
+            f"and exceeds pi_beta's own gap ({beta_gap:+.3f}) -- the covered/held-out split detects "
+            f"overfitting when a genuinely overfit policy exists, and pi_beta (uniform starts during "
+            f"its own training) serves as the small-gap baseline it should be."
         )
     else:
         print(
             f"FAIL: either the gap is under --min-gap or pi_beta's own gap is not clearly smaller. "
-            f"This means the current infrastructure/parameters do NOT reliably demonstrate "
-            f"detectable overfitting -- reconsider before trusting this metric for real analysis "
-            f"(e.g. a stronger overfit-prone config, more start tiers, or a larger held-out tier)."
+            f"Reconsider the start tiers or held-out tier size before trusting this metric."
         )
-
-    out_dir = Path(args.out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
+    print(f"\nSaved {csv_path}")
 
     fig, ax = plt.subplots(figsize=(7, 5))
     x = [0, 1]
     width = 0.35
-    ax.bar([xi - width / 2 for xi in x], [beta_covered, beta_held_out], width, label="\u03c0\u03b2 (prior)", color="tab:gray")
-    ax.bar([xi + width / 2 for xi in x], [overfit_covered, overfit_held_out], width, label=args.policy_name, color="tab:red")
+    beta_vals = [df.loc["prior_pi_beta", "covered"], df.loc["prior_pi_beta", "held_out"]]
+    mem_vals = [df.loc["d_mode_memorization", "covered"], df.loc["d_mode_memorization", "held_out"]]
+    ax.bar([xi - width / 2 for xi in x], beta_vals, width, label="\u03c0\u03b2 (prior)", color="tab:gray")
+    ax.bar([xi + width / 2 for xi in x], mem_vals, width, label="D-mode memorization", color="tab:red")
     ax.set_xticks(x)
     ax.set_xticklabels(["covered tier", "held-out tier"])
     ax.set_ylabel("success_rate")
     ax.set_ylim(0, 1)
-    ax.set_title("Is a deliberately overfit-prone policy's covered/held-out gap detectable?")
+    ax.set_title("Is a policy that's overfit BY CONSTRUCTION detectable?")
     ax.legend()
     fig.tight_layout()
     plot_path = out_dir / "overfitting_detectable"
     fig.savefig(plot_path.with_suffix(".svg"))
     fig.savefig(plot_path.with_suffix(".png"), dpi=150)
     plt.close(fig)
-    print(f"\nSaved {plot_path}.svg/.png")
+    print(f"Saved {plot_path}.svg/.png")
 
 
 if __name__ == "__main__":
