@@ -1,33 +1,56 @@
 # Phase 2 study environment (see README, "Phase 2: a more controlled
-# experiment"). Same maze size/hazards/stochasticity as phase 1 -- only
-# extra_connection_prob (redundancy), step_penalty (see below), and
-# num_start_states (the overfitting-detection axis) differ. layout_seed
-# still fixes everything (walls, hazards, AND the K starts) -- keep it
-# identical across the entire pipeline (prior training, dataset
-# collection, pi_D* computation, evaluation) or the policies are
-# literally solving different mazes.
+# experiment"). Same maze size/slip as phase 1 -- extra_connection_prob,
+# num_hazards, step_penalty, and num_start_states all differ, each for a
+# specific, verified reason below. layout_seed still fixes everything
+# (walls, hazards, AND the K starts) -- keep it identical across the
+# entire pipeline (prior training, dataset collection, pi_D* computation,
+# evaluation) or the policies are literally solving different mazes.
 width: 30
 height: 30
 slip_prob: 0.10
-# Verified via scripts/verify_redundancy_level.py: at 0.015 (WITH
-# step_penalty at -0.03 below), on-path states average ~1.9 near-optimal
-# actions (tolerance=0.02, itself calibrated to roughly "the value cost
-# of a one-step detour") -- squarely in the targeted "a handful, not one,
-# not many" range. This number alone does very little without
-# step_penalty at a large-enough magnitude -- see that field's comment.
-extra_connection_prob: 0.015
-num_hazards: 12
-# Raised in magnitude from phase 1's -0.01. At -0.01, EVERY action at
-# EVERY on-path state came out "near-optimal" (mean 3.3-4.0 out of 4)
-# regardless of extra_connection_prob, all the way down to 0.002 -- not
-# because the maze was highly redundant, but because slip_prob=0.10
-# already blends 10% of every action's outcome into a shared average,
-# and a step_penalty this small made the remaining 90% differ by only
-# ~0.02-0.04 in Q-value between the best and worst action at a typical
-# state (verified directly with scripts/verify_redundancy_level.py).
-# -0.03 was the smallest magnitude that let extra_connection_prob
-# actually differentiate "a handful" of good decisions from "many" --
-# re-verify with that script if either value changes.
+
+# Back to phase 1's original value -- NOT because redundancy stopped
+# mattering, but because it turned out to be the wrong lever for it.
+# Lowering this alone (down to 0.015, keeping phase 1's num_hazards=12)
+# made online PPO training's own exploration collapse: an untrained
+# network's action distribution, while close to uniform PER STATE, is
+# CORRELATED across similar-looking states (shared weights) -- unlike
+# true independent-per-step random sampling, this makes it get stuck
+# repeatedly bumping into the same wall, especially where most cells have
+# only ~2 of 4 directions open (a near-tree maze). Verified directly: 5
+# different network initialization seeds all showed the exact same
+# stuck-in-place behavior (0/5 episodes ever reaching the goal OR a
+# hazard, all timeouts) -- ruling out bad luck on one seed. Restoring
+# this value (combined with num_hazards below) fixed it: real training
+# curves emerged (success_rate climbing past 0 within ~100 iterations)
+# without needing any change to entropy_coef.
+extra_connection_prob: 0.08
+
+# Lowered from phase 1's 12. The real culprit behind untrainable
+# exploration wasn't (only) low connectivity -- a pure uniform-random
+# walk (not a network) from a close start reached the goal in 9/10 trials
+# at num_hazards=4, but died to ONE of 12 hazards in 5/5 trials at
+# num_hazards=12, from the exact same start. With 12 possible hazard
+# cells to stumble into vs. one specific goal cell to precisely navigate
+# to, undirected exploration in a low-redundancy maze finds a hazard far
+# more easily than it finds the goal. Combined with extra_connection_prob
+# above, this is what actually let online training escape the stuck mode.
+num_hazards: 4
+
+# Verified via scripts/verify_redundancy_level.py at these exact
+# extra_connection_prob/num_hazards values: on-path states average only
+# 1.09 near-optimal actions (tolerance=0.02, calibrated to roughly "the
+# value cost of a one-step detour") -- stricter than the original 0.015
+# calibration's 1.89, not looser, despite the higher extra_connection_prob
+# -- num_hazards turned out to matter at least as much for this metric.
+# Confirmed to be a REAL, not just nominal, property: deliberately
+# corrupting a controlled fraction of on-path states' actions (replacing
+# pi*'s choice with the worst one) collapses aggregate success_rate from
+# 1.000 (0% corrupted) to 0.367 (10% corrupted) to 0.000 (50% corrupted)
+# -- and per-start, most individual starts are already at 0% success by
+# 25% corruption, with only 2-3 more resilient outliers keeping the
+# aggregate above zero. Disagreeing with the reference policy here is not
+# absorbed for free.
 step_penalty: -0.03
 goal_reward: 1.0
 hazard_reward: -1.0
