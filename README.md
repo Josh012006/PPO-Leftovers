@@ -140,8 +140,137 @@ rather than build a new environment.**
 
 This is a genuine second phase, not a continuation of the first: a new
 prior, a new `D`, a new `π_D*`, and likely a fresh hyperparameter pass.
-The full design (exact redundancy level, number and skew of start
-states) will be written up here as phase 2 gets underway.
+
+### Final environment parameters
+
+<div align="center">
+
+| parameter | phase 1 | phase 2 | why it changed |
+|---|---|---|---|
+| `extra_connection_prob` | 0.08 | 0.08 | see below -- lowering this alone broke online training |
+| `num_hazards` | 12 | 4 | see below -- this, not connectivity, was the real obstacle to exploration |
+| `step_penalty` | -0.01 | -0.03 | needed so value differences between actions exceed slip-induced noise (see requirement 2 below) |
+| `num_start_states` | 1 | 12 | the overfitting-detection axis (requirement 3) |
+
+</div>
+
+Getting here took a real detour. Lowering `extra_connection_prob` alone
+(to 0.015, keeping phase 1's `num_hazards=12`) satisfied requirement 2's
+redundancy target on paper, but made online PPO training's own
+exploration collapse completely: 300 iterations produced exactly 0%
+success, every time, regardless of `entropy_coef`. Diagnosed directly: a
+pure uniform-random walk from a close start reached the goal in 9/10
+trials at `num_hazards=4`, but died to *one of twelve* hazards in 5/5
+trials at `num_hazards=12`, from the identical start -- undirected
+exploration finds any one of many hazards far more easily than the one
+specific goal. A separate check ruled out bad network initialization
+luck: five different random seeds all showed the exact same
+stuck-in-place behavior (an untrained network's action distribution is
+correlated across similar states, unlike true independent-per-step
+random sampling, so even a mild bias repeatedly walks into the same
+wall). Restoring `extra_connection_prob` to 0.08 and lowering
+`num_hazards` to 4 together fixed this -- real training curves emerged
+without touching `entropy_coef` at all (see requirement 1 below).
+
+A separate, structural bug surfaced along the way and is fixed rather
+than worked around: at low redundancy, excluding only each start's
+single BFS-shortest path from candidate hazard cells was not enough --
+the value-optimal policy does not always follow that exact path, so a
+hazard could still end up adjacent to the route actually taken. Four of
+twelve starts had a real 0% success rate under the exact optimal policy
+(not a gradient of risk -- a genuine trap) before this was caught.
+Fixed via rejection sampling in `envs/stochastic_maze.py`
+(`_verify_and_redraw_hazards`): every candidate hazard placement is
+checked against the exact optimal policy's actual success rate from
+every start, and redrawn from scratch if any start falls below 70% --
+never by shaping hazard placement around a known solution, which would
+make the property true by construction instead of testing it.
+
+### Verifying requirement 1: task difficulty
+
+<div align="center">
+<img src="results/phase2/analysis/task_difficulty/task_difficulty.svg" width="85%"><br><em>Left: a uniformly random policy (2.0% success) against the full-information exact optimal policy (100%). Right: a genuine 300-iteration online PPO run, success_rate climbing from 0% to 39.3%.</em>
+</div>
+
+The random-vs-optimal gap (98 points) rules out the task being solvable
+by luck. The training curve is not smooth -- it dips as low as 8.3% around
+iteration 30 before climbing past 39% by iteration 300 -- but the
+direction is unambiguous, and no change to `entropy_coef` was needed to
+get it: the fix was `num_hazards` and `extra_connection_prob` above, not
+the training algorithm's own exploration incentives.
+
+### Verifying requirement 2: redundancy
+
+<div align="center">
+<img src="results/phase2/analysis/redundancy_level/redundancy_level_histogram.svg" width="48%"> <img src="results/phase2/analysis/redundancy_level/redundancy_level_map.svg" width="48%">
+</div>
+
+`scripts/verify_redundancy_level.py` reports on-path states averaging
+1.09 near-optimal actions (tolerance calibrated to roughly the value cost
+of a one-step detour) -- the script's own built-in heuristic flags this
+as possibly *too* low (near a perfect maze). That heuristic was
+deliberately overridden by a direct behavioral check instead: starting
+from the exact optimal policy, a controlled fraction of on-path states'
+actions were corrupted (replaced with the worst available action) and
+success_rate was measured live.
+
+<div align="center">
+
+| states corrupted | aggregate success_rate |
+|---|---|
+| 0% | 100.0% |
+| 10% | 36.7% |
+| 25% | 11.3% |
+| 50% | 0.0% |
+
+</div>
+
+A graceful, monotonic decline -- not a perfect maze's instant collapse at
+any disagreement, but nowhere near phase 1's redundancy either. Checked
+per-start too: most individual starts are already at 0% success by 25%
+corruption, with only two or three more resilient outliers keeping the
+aggregate above zero -- the aggregate number is not hiding a uniformly
+tolerant reality.
+
+### Verifying requirement 3: overfitting detectability
+
+The first attempt at this used a deliberately "overfit-prone" fixed-D PPO
+config (many more epochs than a baseline run, `entropy_coef=0`) and
+compared its covered-vs-held-out gap against `π_β`'s own. It failed in an
+instructive way: that config's gap (+0.238) came out *smaller* than
+`π_β`'s own baseline gap (+0.268), because comparing it against a
+10-epoch baseline confounded "trained for far longer" with "overfit" --
+more gradient steps improved both tiers, masking whatever overfitting
+signal existed. Adjusting epochs and entropy to isolate the effect
+properly would have meant doing the actual hyperparameter analysis this
+check is only supposed to prepare for -- so instead of tuning PPO
+further, the check itself was redesigned.
+
+`scripts/verify_overfitting_detectable.py` now builds a policy that is
+overfit **by construction**: for every state, memorize whichever action
+`D` shows most often there -- pure behavioral-cloning-style memorization,
+no value estimation, no PPO training at all.
+
+<div align="center">
+<img src="results/phase2/analysis/overfitting_detectable/overfitting_detectable.svg" width="65%"><br><em>The memorization policy matches π_β on covered starts but collapses to zero on held-out; π_β itself (uniform starts during its own training) keeps a much smaller gap.</em>
+</div>
+
+<div align="center">
+
+| policy | covered | held-out | gap |
+|---|---|---|---|
+| `π_β` (baseline) | 46.2% | 19.4% | +0.268 |
+| D-mode memorization | 46.4% | 0.0% | **+0.464** |
+
+</div>
+
+The memorization policy matches `π_β`'s covered performance almost
+exactly (it deterministically replays `π_β`'s single most common local
+choice there) while collapsing completely on held-out starts, where it
+has no information at all -- roughly double `π_β`'s own gap. The
+covered/held-out infrastructure does detect overfitting when a genuinely
+overfit policy exists; the issue was never the infrastructure, only the
+earlier PPO-specific definition of "overfit."
 
 ## Project structure
 
