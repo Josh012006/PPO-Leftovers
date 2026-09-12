@@ -112,6 +112,8 @@ def main():
             hazard_reward=env_cfg.hazard_reward,
             max_steps=env_cfg.max_steps,
             layout_seed=env_cfg.layout_seed,
+            num_start_states=env_cfg.num_start_states,
+            gamma=env_cfg.gamma,
         )
 
     eval_env = make_env()

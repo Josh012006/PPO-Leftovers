@@ -1,0 +1,21 @@
+# H4 ablation (phase 2): probing epochs far beyond any realistic range.
+# Every field here is identical to ppo_fixed_d_standard.yaml EXCEPT
+# epochs, pushed to 300 (30x the 10-epoch baseline) to find out whether
+# epochs alone stops mattering somewhere in that range. Used by
+# scripts/analyze_epochs.py, not scripts/04.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.2
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
