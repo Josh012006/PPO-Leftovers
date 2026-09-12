@@ -3,7 +3,7 @@ fixed-D PPO checkpoints (standard, modified, any H1-H7 ablation) under the
 IDENTICAL live-rollout protocol (same env, same seeds, same episode count),
 then print/save the exploitation-gap table.
 
-Usage (phase 1, unaffected):
+Usage (phase 1, unaffected -- no --start-tiers-config, single number per policy):
     python scripts/05_evaluate_all.py \
         --env-config configs/phase1/env_maze.yaml \
         --prior-checkpoint results/phase1/prior_checkpoint.pt \
@@ -14,8 +14,13 @@ Usage (phase 1, unaffected):
         --eval-seed 999 \
         --out results/phase1/gap_report.csv
 
-Usage (phase 2 -- adds a covered-tier and a held-out-tier success_rate for
-EVERY policy, never blended into one number; see README, "Phase 2"):
+Usage (phase 2 -- see README, "Our new starting point"): every policy is
+evaluated THREE ways (overall/covered/held-out) and combined into one
+weighted_success_rate (0.25/0.25/0.50 by default -- held-out weighted
+most heavily to protect the SELECTION of "which policy is better" against
+overfitting, not just the policies themselves). The weighted number, not
+any of the three raw ones, is what gap_vs_reference_success_rate is
+computed against:
     python scripts/05_evaluate_all.py \
         --env-config configs/phase2/env_maze.yaml \
         --start-tiers-config configs/phase2/start_tiers.yaml \
@@ -39,7 +44,15 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import torch
 
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
-from ppo_exploitation.eval.evaluate import build_gap_report, evaluate_policy, make_neural_act_fn, make_tabular_act_fn
+from ppo_exploitation.eval.evaluate import (
+    DEFAULT_EVAL_WEIGHTS,
+    build_gap_report,
+    evaluate_policy,
+    evaluate_policy_weighted,
+    get_tier_start_lists,
+    make_neural_act_fn,
+    make_tabular_act_fn,
+)
 from ppo_exploitation.ppo.networks import ActorCritic
 from ppo_exploitation.utils.config import MazeEnvConfig, StartTierConfig
 
@@ -75,11 +88,19 @@ def main():
     parser.add_argument(
         "--start-tiers-config",
         default=None,
-        help="Phase 2 only. If given, EVERY policy below is evaluated three ways: 'overall' (the "
-        "env's own default reset, uniform across all starts), '_covered' (well- + moderately-"
-        "covered tier starts only), and '_held_out' (held-out tier starts only, never seen "
-        "during D collection) -- these two are never blended into one number. If omitted (phase "
-        "1's default), only the single 'overall' number is produced, unchanged from before.",
+        help="Phase 2 only. If given, EVERY policy is evaluated three ways -- 'overall' (the env's "
+        "own default reset, uniform across all starts), 'covered' (well- + moderately-covered "
+        "tier starts), 'held_out' (held-out tier starts, never seen during D collection) -- and "
+        "combined into one weighted_success_rate (see --eval-weights). If omitted (phase 1's "
+        "default), only the single 'overall' number is produced, unchanged from before.",
+    )
+    parser.add_argument(
+        "--eval-weights",
+        type=float,
+        nargs=3,
+        default=list(DEFAULT_EVAL_WEIGHTS),
+        metavar=("OVERALL", "COVERED", "HELD_OUT"),
+        help=f"Weights for the three eval modes, must sum to 1.0 (default {DEFAULT_EVAL_WEIGHTS}).",
     )
     parser.add_argument("--out", default="results/phase1/gap_report.csv")
     args = parser.parse_args()
@@ -101,27 +122,47 @@ def main():
     )
 
     covered_starts = held_out_starts = None
+    weights = tuple(args.eval_weights)
     if args.start_tiers_config:
         tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
-        covered_starts = [
-            env.layout.state_id(*env.layout.starts[i])
-            for i in (*tier_cfg.well_covered_indices, *tier_cfg.moderately_covered_indices)
-        ]
-        held_out_starts = [env.layout.state_id(*env.layout.starts[i]) for i in tier_cfg.held_out_indices]
+        covered_starts, held_out_starts = get_tier_start_lists(env, tier_cfg)
         print(
             f"Loaded start tiers from {args.start_tiers_config}: "
-            f"{len(covered_starts)} covered starts, {len(held_out_starts)} held-out starts."
+            f"{len(covered_starts)} covered starts, {len(held_out_starts)} held-out starts. "
+            f"Weights (overall/covered/held_out): {weights}."
         )
 
     def eval_all_ways(name: str, act_fn, results: dict, **eval_kwargs):
-        results[name] = evaluate_policy(env, act_fn, args.n_episodes, args.eval_seed, **eval_kwargs)
-        if covered_starts is not None:
-            results[f"{name}_covered"] = evaluate_policy(
-                env, act_fn, args.n_episodes, args.eval_seed, eval_start_states=covered_starts, **eval_kwargs
-            )
-            results[f"{name}_held_out"] = evaluate_policy(
-                env, act_fn, args.n_episodes, args.eval_seed, eval_start_states=held_out_starts, **eval_kwargs
-            )
+        if covered_starts is None:
+            results[name] = evaluate_policy(env, act_fn, args.n_episodes, args.eval_seed, **eval_kwargs)
+            return
+        w = evaluate_policy_weighted(
+            env, act_fn, args.n_episodes, args.eval_seed, covered_starts, held_out_starts,
+            weights=weights, **eval_kwargs,
+        )
+        results[f"{name}_overall"] = w["overall"]
+        results[f"{name}_covered"] = w["covered"]
+        results[f"{name}_held_out"] = w["held_out"]
+        # A synthetic row for the combined number: only success_rate (and,
+        # for a readable table, mean_return/mean_length under the same
+        # weights) are meaningful here -- stderr isn't a simple weighted
+        # combination of the three, so it's left as NaN rather than
+        # approximated.
+        results[f"{name}_weighted"] = {
+            "mean_return": (
+                weights[0] * w["overall"]["mean_return"]
+                + weights[1] * w["covered"]["mean_return"]
+                + weights[2] * w["held_out"]["mean_return"]
+            ),
+            "stderr_return": float("nan"),
+            "success_rate": w["weighted_success_rate"],
+            "success_rate_stderr": float("nan"),
+            "mean_length": (
+                weights[0] * w["overall"]["mean_length"]
+                + weights[1] * w["covered"]["mean_length"]
+                + weights[2] * w["held_out"]["mean_length"]
+            ),
+        }
 
     results: dict = {}
 
@@ -150,8 +191,8 @@ def main():
         net = load_ppo_checkpoint(path)
         eval_all_ways(name, make_neural_act_fn(net, deterministic=not args.stochastic_eval), results)
 
-    report = build_gap_report(results, reference_key="pi_D*_empirical")
-    pd_options = None
+    reference_key = "pi_D*_empirical_weighted" if covered_starts is not None else "pi_D*_empirical"
+    report = build_gap_report(results, reference_key=reference_key)
     try:
         import pandas as pd
 
@@ -163,8 +204,9 @@ def main():
     print(report.to_string())
     if covered_starts is not None:
         print(
-            "\n(rows suffixed _covered / _held_out are the same policy evaluated only from that "
-            "tier's starts -- never blended into the unsuffixed 'overall' row; see README, 'Phase 2'.)"
+            f"\n(rows suffixed _overall / _covered / _held_out are the same policy evaluated from that "
+            f"population only; _weighted combines them {weights} -- see README, 'Our new starting "
+            f"point'. gap_vs_reference_* is computed against {reference_key}.)"
         )
 
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)

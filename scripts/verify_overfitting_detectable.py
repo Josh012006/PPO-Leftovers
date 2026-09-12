@@ -69,7 +69,7 @@ import torch
 
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
-from ppo_exploitation.eval.evaluate import evaluate_policy, make_neural_act_fn
+from ppo_exploitation.eval.evaluate import DEFAULT_EVAL_WEIGHTS, evaluate_policy_weighted, get_tier_start_lists, make_neural_act_fn
 from ppo_exploitation.ppo.networks import ActorCritic
 from ppo_exploitation.utils.config import MazeEnvConfig, StartTierConfig
 
@@ -108,7 +108,16 @@ def main():
         "for the check to pass -- i.e. how large a gap counts as clearly detectable, not noise.",
     )
     parser.add_argument("--out-dir", default="results/phase2/analysis/overfitting_detectable")
+    parser.add_argument(
+        "--eval-weights",
+        type=float,
+        nargs=3,
+        default=list(DEFAULT_EVAL_WEIGHTS),
+        metavar=("OVERALL", "COVERED", "HELD_OUT"),
+        help=f"Weights for the three eval modes, must sum to 1.0 (default {DEFAULT_EVAL_WEIGHTS}).",
+    )
     args = parser.parse_args()
+    weights = tuple(args.eval_weights)
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
     env = StochasticMazeEnv(
@@ -138,20 +147,29 @@ def main():
     prior_act_fn = make_neural_act_fn(prior_net, deterministic=True)
 
     tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
-    covered_starts = [
-        env.layout.state_id(*env.layout.starts[i])
-        for i in (*tier_cfg.well_covered_indices, *tier_cfg.moderately_covered_indices)
-    ]
-    held_out_starts = [env.layout.state_id(*env.layout.starts[i]) for i in tier_cfg.held_out_indices]
+    covered_starts, held_out_starts = get_tier_start_lists(env, tier_cfg)
     print(f"{len(covered_starts)} covered starts, {len(held_out_starts)} held-out starts.\n")
 
     rows = []
     for name, act_fn in [("d_mode_memorization", d_mode_act_fn), ("prior_pi_beta", prior_act_fn)]:
-        res_cov = evaluate_policy(env, act_fn, args.eval_episodes, seed=args.eval_seed, eval_start_states=covered_starts)
-        res_held = evaluate_policy(env, act_fn, args.eval_episodes, seed=args.eval_seed, eval_start_states=held_out_starts)
-        gap = res_cov["success_rate"] - res_held["success_rate"]
-        rows.append({"policy": name, "covered": res_cov["success_rate"], "held_out": res_held["success_rate"], "gap": gap})
-        print(f"{name:22s} covered={res_cov['success_rate']:.3f}  held_out={res_held['success_rate']:.3f}  gap={gap:+.3f}")
+        w = evaluate_policy_weighted(
+            env, act_fn, args.eval_episodes, args.eval_seed, covered_starts, held_out_starts, weights=weights
+        )
+        gap = w["covered"]["success_rate"] - w["held_out"]["success_rate"]
+        rows.append(
+            {
+                "policy": name,
+                "overall": w["overall"]["success_rate"],
+                "covered": w["covered"]["success_rate"],
+                "held_out": w["held_out"]["success_rate"],
+                "weighted": w["weighted_success_rate"],
+                "gap": gap,
+            }
+        )
+        print(
+            f"{name:22s} overall={w['overall']['success_rate']:.3f}  covered={w['covered']['success_rate']:.3f}  "
+            f"held_out={w['held_out']['success_rate']:.3f}  weighted={w['weighted_success_rate']:.3f}  gap={gap:+.3f}"
+        )
 
     df = pd.DataFrame(rows).set_index("policy")
     out_dir = Path(args.out_dir)
@@ -176,15 +194,17 @@ def main():
         )
     print(f"\nSaved {csv_path}")
 
-    fig, ax = plt.subplots(figsize=(7, 5))
-    x = [0, 1]
+    fig, ax = plt.subplots(figsize=(8, 5))
+    x = [0, 1, 2]
     width = 0.35
-    beta_vals = [df.loc["prior_pi_beta", "covered"], df.loc["prior_pi_beta", "held_out"]]
-    mem_vals = [df.loc["d_mode_memorization", "covered"], df.loc["d_mode_memorization", "held_out"]]
+    beta_vals = [df.loc["prior_pi_beta", "overall"], df.loc["prior_pi_beta", "covered"], df.loc["prior_pi_beta", "held_out"]]
+    mem_vals = [
+        df.loc["d_mode_memorization", "overall"], df.loc["d_mode_memorization", "covered"], df.loc["d_mode_memorization", "held_out"]
+    ]
     ax.bar([xi - width / 2 for xi in x], beta_vals, width, label="\u03c0\u03b2 (prior)", color="tab:gray")
     ax.bar([xi + width / 2 for xi in x], mem_vals, width, label="D-mode memorization", color="tab:red")
     ax.set_xticks(x)
-    ax.set_xticklabels(["covered tier", "held-out tier"])
+    ax.set_xticklabels(["overall", "covered tier", "held-out tier"])
     ax.set_ylabel("success_rate")
     ax.set_ylim(0, 1)
     ax.set_title("Is a policy that's overfit BY CONSTRUCTION detectable?")

@@ -35,18 +35,26 @@ Outputs, all under --out-dir (default results/analysis/h7/):
   and matching _success_return/_clip_entropy .svg/.png PER COMBINATION
   (exactly as scripts/analyze_epochs.py produces for a single run), plus:
   h7_sweep_summary.csv -- one row per combination: swept field values,
-                           best/mean/std/final success_rate, csv path
+                           best/mean/std/final weighted_success_rate, csv path
+
+Every checkpoint in every combination is evaluated THREE ways --
+overall/covered/held-out -- and combined into weighted_success_rate (see
+README, "Our new starting point"); the summary table's best/mean/std/final
+columns are now this weighted number, not the raw overall one -- so
+picking "the best combination" from this sweep already accounts for
+overfitting risk, not just raw performance.
 
 Usage:
     python scripts/analyze_h7.py \
-        --env-config configs/env_maze.yaml \
-        --dataset results/dataset_D.pkl \
-        --prior-checkpoint results/prior_checkpoint.pt \
-        --pi-d-star-empirical results/pi_d_star_empirical.pkl \
-        --sweep-config configs/ppo_fixed_d_h7_sweep.yaml \
+        --env-config configs/phase2/env_maze.yaml \
+        --dataset results/phase2/dataset_D.pkl \
+        --prior-checkpoint results/phase2/prior_checkpoint.pt \
+        --pi-d-star-empirical results/phase2/pi_d_star_empirical.pkl \
+        --start-tiers-config configs/phase2/start_tiers.yaml \
+        --sweep-config configs/phase2/ppo_fixed_d_h7_sweep.yaml \
         --base-prefix h7_clip_0_3_ent_0_01_gae_0_90 \
         --checkpoint-every 5 --eval-episodes 500 --eval-seed 24680 \
-        --out-dir results/analysis/h7
+        --out-dir results/phase2/analysis/h7
 """
 from __future__ import annotations
 
@@ -63,10 +71,11 @@ import pandas as pd
 import torch
 import yaml
 
-from _analysis_lib import compute_ceiling_success_rate, run_single_analysis
+from _analysis_lib import compute_ceiling_success_rates, run_single_analysis
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
-from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams
+from ppo_exploitation.eval.evaluate import DEFAULT_EVAL_WEIGHTS, get_tier_start_lists
+from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams, StartTierConfig
 from ppo_exploitation.utils.seeding import set_global_seed
 
 SHORT_NAMES = {
@@ -137,10 +146,24 @@ def make_combo_prefix(base_prefix: str, swept_keys: list[str], combo: dict) -> s
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-config", default="configs/env_maze.yaml")
-    parser.add_argument("--dataset", default="results/dataset_D.pkl")
-    parser.add_argument("--prior-checkpoint", default="results/prior_checkpoint.pt")
-    parser.add_argument("--pi-d-star-empirical", default="results/pi_d_star_empirical.pkl")
+    parser.add_argument("--env-config", default="configs/phase2/env_maze.yaml")
+    parser.add_argument("--dataset", default="results/phase2/dataset_D.pkl")
+    parser.add_argument("--prior-checkpoint", default="results/phase2/prior_checkpoint.pt")
+    parser.add_argument("--pi-d-star-empirical", default="results/phase2/pi_d_star_empirical.pkl")
+    parser.add_argument(
+        "--start-tiers-config",
+        required=True,
+        help="Required -- every checkpoint is scored by weighted_success_rate now (see README, "
+        "'Our new starting point'), which needs the covered/held-out tier split to compute.",
+    )
+    parser.add_argument(
+        "--eval-weights",
+        type=float,
+        nargs=3,
+        default=list(DEFAULT_EVAL_WEIGHTS),
+        metavar=("OVERALL", "COVERED", "HELD_OUT"),
+        help=f"Weights for the three eval modes, must sum to 1.0 (default {DEFAULT_EVAL_WEIGHTS}).",
+    )
     parser.add_argument("--sweep-config", required=True)
     parser.add_argument(
         "--base-prefix",
@@ -151,9 +174,10 @@ def main():
     parser.add_argument("--checkpoint-every", type=int, default=5)
     parser.add_argument("--eval-episodes", type=int, default=500)
     parser.add_argument("--eval-seed", type=int, default=24680)
-    parser.add_argument("--out-dir", default="results/analysis/h7")
+    parser.add_argument("--out-dir", default="results/phase2/analysis/h7")
     parser.add_argument("--force", action="store_true", help="Re-run combinations even if their CSV already exists.")
     args = parser.parse_args()
+    weights = tuple(args.eval_weights)
 
     with open(args.sweep_config, "r") as f:
         raw = yaml.safe_load(f)
@@ -189,6 +213,13 @@ def main():
         )
 
     eval_env = make_env()
+    tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
+    covered_starts, held_out_starts = get_tier_start_lists(eval_env, tier_cfg)
+    print(
+        f"Loaded start tiers from {args.start_tiers_config}: {len(covered_starts)} covered, "
+        f"{len(held_out_starts)} held-out. Weights (overall/covered/held_out): {weights}."
+    )
+
     dataset = load_dataset(args.dataset)
     print(f"Loaded D: {len(dataset)} transitions, {dataset.n_episodes} episodes.")
 
@@ -196,12 +227,15 @@ def main():
     prior_state_dict = ckpt["state_dict"]
     print(f"theta and pi_old both start from the prior checkpoint (final eval: {ckpt['final_eval']})")
 
-    ceiling_success_rate = compute_ceiling_success_rate(
-        eval_env, args.pi_d_star_empirical, args.eval_episodes, args.eval_seed
+    ceiling_success_rates = compute_ceiling_success_rates(
+        eval_env, args.pi_d_star_empirical, args.eval_episodes, args.eval_seed,
+        covered_starts, held_out_starts, weights=weights,
     )
     print(
         f"pi_D* (empirical) ceiling under this sweep's eval protocol "
-        f"(seed={args.eval_seed}, n={args.eval_episodes}): success_rate={ceiling_success_rate:.3f}\n"
+        f"(seed={args.eval_seed}, n={args.eval_episodes}): overall={ceiling_success_rates['overall']:.3f}, "
+        f"covered={ceiling_success_rates['covered']:.3f}, held_out={ceiling_success_rates['held_out']:.3f}, "
+        f"weighted={ceiling_success_rates['weighted']:.3f}\n"
     )
 
     out_dir = Path(args.out_dir)
@@ -224,10 +258,10 @@ def main():
                 {
                     **{k: combo[k] for k in swept_keys},
                     "prefix": prefix,
-                    "best": float(df_existing["success_rate"].max()),
-                    "mean": float(df_existing["success_rate"].mean()),
-                    "std": float(df_existing["success_rate"].std()),
-                    "final": float(df_existing.iloc[-1]["success_rate"]),
+                    "best": float(df_existing["weighted_success_rate"].max()),
+                    "mean": float(df_existing["weighted_success_rate"].mean()),
+                    "std": float(df_existing["weighted_success_rate"].std()),
+                    "final": float(df_existing.iloc[-1]["weighted_success_rate"]),
                     "csv_path": str(csv_path),
                     "status": "skipped (already existed)",
                 }
@@ -247,13 +281,16 @@ def main():
             eval_env=eval_env,
             dataset=dataset,
             prior_state_dict=prior_state_dict,
-            ceiling_success_rate=ceiling_success_rate,
+            ceiling_success_rates=ceiling_success_rates,
             cfg=cfg,
             checkpoint_every=args.checkpoint_every,
             eval_episodes=args.eval_episodes,
             eval_seed=args.eval_seed,
             out_dir=out_dir,
             prefix=prefix,
+            covered_starts=covered_starts,
+            held_out_starts=held_out_starts,
+            weights=weights,
             title_suffix=combo_desc,
             verbose=True,
             log_prefix=log_tag,
@@ -261,7 +298,7 @@ def main():
         dt = time.time() - t0
         combo_times.append(dt)
 
-        print(f"{log_tag}Done in {dt / 60:.1f} min -- best={summary['best']:.3f} mean={summary['mean']:.3f} std={summary['std']:.3f}")
+        print(f"{log_tag}Done in {dt / 60:.1f} min -- best_weighted={summary['best']:.3f} mean={summary['mean']:.3f} std={summary['std']:.3f}")
         results.append({**{k: combo[k] for k in swept_keys}, **summary, "status": "ran"})
 
     summary_df = pd.DataFrame(results)

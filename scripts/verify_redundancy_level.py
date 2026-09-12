@@ -51,8 +51,9 @@ import numpy as np
 import pandas as pd
 
 from ppo_exploitation.envs.stochastic_maze import ACTIONS, StochasticMazeEnv
+from ppo_exploitation.eval.evaluate import DEFAULT_EVAL_WEIGHTS, evaluate_policy_weighted, get_tier_start_lists
 from ppo_exploitation.reference.experience_optimal import _value_iteration
-from ppo_exploitation.utils.config import MazeEnvConfig
+from ppo_exploitation.utils.config import MazeEnvConfig, StartTierConfig
 
 
 def main():
@@ -69,6 +70,30 @@ def main():
     parser.add_argument("--gamma", type=float, default=None, help="Defaults to --env-config's gamma.")
     parser.add_argument("--vi-theta", type=float, default=1e-8)
     parser.add_argument("--vi-max-iter", type=int, default=100_000)
+    parser.add_argument(
+        "--start-tiers-config",
+        required=True,
+        help="Required for the corruption-sensitivity check below, scored by weighted_success_rate "
+        "(see README, 'Our new starting point').",
+    )
+    parser.add_argument(
+        "--eval-weights",
+        type=float,
+        nargs=3,
+        default=list(DEFAULT_EVAL_WEIGHTS),
+        metavar=("OVERALL", "COVERED", "HELD_OUT"),
+        help=f"Weights for the three eval modes, must sum to 1.0 (default {DEFAULT_EVAL_WEIGHTS}).",
+    )
+    parser.add_argument(
+        "--corruption-fractions",
+        type=float,
+        nargs="+",
+        default=[0.0, 0.1, 0.25, 0.5, 1.0],
+        help="Fractions of on-shortest-path states to deliberately corrupt (replace pi*'s action "
+        "with the worst one) when checking that disagreement is actually felt, not just nominal.",
+    )
+    parser.add_argument("--corruption-episodes", type=int, default=300)
+    parser.add_argument("--corruption-seed", type=int, default=999)
     parser.add_argument("--out-dir", default="results/phase2/analysis/redundancy_level")
     args = parser.parse_args()
 
@@ -189,6 +214,70 @@ def main():
         print("  -> in the targeted 'a handful, not one, not many' range.")
     print(f"\nSaved {csv_path}")
 
+    # --- Corruption-sensitivity check: does disagreement with pi* actually
+    # cost something felt, or is n_near_optimal just a nominal number?
+    # Deliberately replaces pi*'s action with the WORST one at a controlled
+    # fraction of on-shortest-path states, then evaluates live -- three
+    # ways (overall/covered/held-out), combined into weighted_success_rate
+    # (see README, "Our new starting point"), same as every other check. ---
+    tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
+    covered_starts, held_out_starts = get_tier_start_lists(env, tier_cfg)
+    weights = tuple(args.eval_weights)
+    on_path_states = on_path["state"].to_numpy(dtype=int)
+    rng = np.random.default_rng(args.corruption_seed)
+
+    print(
+        f"\n=== Corruption sensitivity: replacing pi*'s action with the worst one at a fraction of "
+        f"the {len(on_path_states)} on-path states ==="
+    )
+    corruption_rows = []
+    for frac in args.corruption_fractions:
+        corrupted = policy.copy()
+        n_corrupt = int(round(frac * len(on_path_states)))
+        to_corrupt = rng.choice(on_path_states, size=n_corrupt, replace=False) if n_corrupt > 0 else []
+        for s in to_corrupt:
+            corrupted[s] = int(np.argmin(Q[s]))
+
+        def corrupted_act_fn(obs, state, pol=corrupted):
+            return int(pol[state])
+
+        w = evaluate_policy_weighted(
+            env, corrupted_act_fn, args.corruption_episodes, args.corruption_seed,
+            covered_starts, held_out_starts, weights=weights,
+        )
+        corruption_rows.append(
+            {
+                "corrupted_fraction": frac,
+                "n_states_corrupted": n_corrupt,
+                "success_rate_overall": w["overall"]["success_rate"],
+                "success_rate_covered": w["covered"]["success_rate"],
+                "success_rate_held_out": w["held_out"]["success_rate"],
+                "weighted_success_rate": w["weighted_success_rate"],
+            }
+        )
+        print(
+            f"  frac={frac:.2f} ({n_corrupt:3d} states): weighted={w['weighted_success_rate']:.3f} "
+            f"(overall={w['overall']['success_rate']:.3f}, covered={w['covered']['success_rate']:.3f}, "
+            f"held_out={w['held_out']['success_rate']:.3f})"
+        )
+
+    corruption_df = pd.DataFrame(corruption_rows)
+    corruption_csv = out_dir / "redundancy_corruption_sensitivity.csv"
+    corruption_df.to_csv(corruption_csv, index=False)
+    print(f"Saved {corruption_csv}")
+
+    zero_row = corruption_df[corruption_df["corrupted_fraction"] == 0.0]
+    if len(zero_row) > 0 and len(corruption_df) > 1:
+        drop = zero_row.iloc[0]["weighted_success_rate"] - corruption_df.iloc[1]["weighted_success_rate"]
+        if drop < 0.05:
+            print(
+                f"  -> WARNING: weighted_success_rate barely moves from 0% to "
+                f"{corruption_df.iloc[1]['corrupted_fraction']:.0%} corruption (drop={drop:.3f}) -- "
+                f"disagreement with pi* may not be clearly felt here; reconsider redundancy parameters."
+            )
+        else:
+            print(f"  -> disagreement is clearly felt: a {drop:.3f} drop in weighted_success_rate from the first corruption step alone.")
+
     # --- Plot 1: histogram, all states vs. on-shortest-path states ---
     fig, ax = plt.subplots(figsize=(7, 5))
     bins = np.arange(0.5, 5.5, 1)
@@ -230,6 +319,40 @@ def main():
     fig.savefig(plot2.with_suffix(".png"), dpi=150)
     plt.close(fig)
     print(f"Saved {plot2}.svg/.png")
+
+    # --- Plot 3: corruption sensitivity, three raw curves + weighted ---
+    fig, axes = plt.subplots(1, 2, figsize=(13, 5))
+    ax = axes[0]
+    colors = {"overall": "tab:blue", "covered": "tab:green", "held_out": "tab:red"}
+    for key, label in [("overall", "overall"), ("covered", "covered"), ("held_out", "held-out")]:
+        ax.plot(
+            corruption_df["corrupted_fraction"], corruption_df[f"success_rate_{key}"],
+            color=colors[key], marker="o", markersize=4, label=label,
+        )
+    ax.set_xlabel("fraction of on-path states corrupted")
+    ax.set_ylabel("success_rate")
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_title("Raw success_rate vs. corruption")
+    ax.legend(fontsize=8)
+
+    ax = axes[1]
+    ax.plot(
+        corruption_df["corrupted_fraction"], corruption_df["weighted_success_rate"],
+        color="tab:purple", marker="o", markersize=4, label="weighted_success_rate",
+    )
+    ax.set_xlabel("fraction of on-path states corrupted")
+    ax.set_ylabel(f"weighted_success_rate (overall={weights[0]}, covered={weights[1]}, held_out={weights[2]})")
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_title("Is disagreement with pi* clearly felt?")
+    ax.legend(fontsize=8)
+
+    fig.suptitle("Corruption-sensitivity check (requirement 2)")
+    fig.tight_layout()
+    plot3 = out_dir / "redundancy_corruption_sensitivity"
+    fig.savefig(plot3.with_suffix(".svg"))
+    fig.savefig(plot3.with_suffix(".png"), dpi=150)
+    plt.close(fig)
+    print(f"Saved {plot3}.svg/.png")
 
 
 if __name__ == "__main__":

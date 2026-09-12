@@ -272,6 +272,83 @@ covered/held-out infrastructure does detect overfitting when a genuinely
 overfit policy exists; the issue was never the infrastructure, only the
 earlier PPO-specific definition of "overfit."
 
+## Our new starting point: a three-way, weighted evaluation
+
+Running the actual H4 baseline (the first real result after the three
+requirements above) surfaced a gap in how this project was measuring
+"better." Two things exposed it. First, `analyze_epochs.py`'s own
+epoch-0 evaluation showed `success_rate=0.000` for `π_β` -- a network
+that scores ~40% everywhere else -- because that script (like seven
+other `analyze_*.py` scripts inherited from phase 1) had never been
+updated to pass `num_start_states`, silently constructing a *different*
+one-start maze instead of phase 2's twelve-start one. Second, and more
+fundamentally: once that was fixed, it became clear that the
+covered/held-out distinction requirement 3 introduced was only being
+applied at the very end (`scripts/05_evaluate_all.py`'s final report) --
+every intermediate decision along the way (which epoch counts as "best"
+during a sweep, which checkpoint gets saved, which hyperparameter looks
+better) was still being made on a plain, unweighted `success_rate` that
+could just as easily reward memorization as the original PPO-vs-`π_D*`
+comparison this project started from could.
+
+**Every evaluation everywhere in this project now reports three numbers,
+combined into one weighted score:**
+
+<div align="center">
+
+| population | weight | what it measures |
+|---|---|---|
+| overall | 25% | the env's own default reset, uniform across all 12 starts |
+| covered | 25% | the 8 well-/moderately-covered tier starts |
+| held-out | 50% | the 4 starts never seen during `D` collection |
+
+</div>
+
+`weighted_success_rate = 0.25·overall + 0.25·covered + 0.50·held_out`.
+Held-out is weighted most heavily **on purpose** -- not because it is the
+single most representative population, but because it is the only one of
+the three memorization cannot cheat: a policy that has simply memorized
+`D`'s coverage looks identical to a genuinely good one on `overall` and
+`covered`, and only reveals itself on `held_out`. Weighting it heaviest
+means the number used to pick "the best epoch," "the best checkpoint," or
+"the best hyperparameter" is itself protected against the same failure
+mode requirement 3 was built to catch in individual policies -- the
+selection *process*, not just the policies it selects between, is now
+guarded against overfitting.
+
+This is not a cosmetic addition. `scripts/eval/evaluate.py`'s
+`evaluate_policy_weighted` is now the single shared implementation behind
+every check in this project: `scripts/05_evaluate_all.py`'s final report,
+the epoch/hyperparameter sweeps (`scripts/analyze_epochs.py`,
+`scripts/analyze_h7.py` -- checkpoint *selection* during training now
+uses the weighted number, not raw `success_rate`), and both remaining
+verification scripts (`scripts/verify_task_difficulty.py`'s training
+curve, `scripts/verify_overfitting_detectable.py`'s comparison, and
+`scripts/verify_redundancy_level.py`'s corruption-sensitivity check,
+which had never actually been wired into that script as a re-runnable
+feature before now).
+
+**The three baseline policies, under this new protocol** (500 episodes,
+seed 999):
+
+<div align="center">
+
+| policy | overall | covered | held-out | **weighted** |
+|---|---|---|---|---|
+| `π_β` (prior) | 40.0% | 46.2% | 19.4% | **31.3%** |
+| `π_D*` (empirical) | 56.4% | 74.2% | 29.2% | **47.3%** |
+| `π_D*` (true-restricted) | 59.6% | 75.2% | 39.4% | **53.4%** |
+
+</div>
+
+Every one of these already shows the same pattern the whole design was
+meant to expose: covered performance is well above overall, held-out is
+well below -- even for `π_D*` itself, whose own ceiling depends on `D`'s
+coverage exactly as any learned policy's would. The weighted column, not
+any single one of the three raw numbers, is what "better" means from here
+on -- this is the number the upcoming H1-H7 sweep is measured against,
+replacing phase 1's plain `success_rate` gap entirely.
+
 ## Project structure
 
 ```
