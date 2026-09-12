@@ -1,0 +1,21 @@
+# H3 (phase 2): does the clip range itself limit how far PPO can extract
+# from D? Same as ppo_fixed_d_epochs_analysis.yaml (300 epochs, otherwise
+# identical hyperparameters) except clip_eps is swept. 0.2 excluded --
+# already run as H4 (results/phase2/analysis/epochs/epochs_analysis.csv);
+# no need to redo it.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: [0.1, 0.3, 0.4]
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0

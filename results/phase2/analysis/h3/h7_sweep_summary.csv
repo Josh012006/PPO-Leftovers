@@ -1,0 +1,4 @@
+clip_eps,prefix,best,best_overall,mean,std,final,csv_path,best_checkpoint_epoch,status
+0.1,h3_clip_sweep_clip_0_1,0.34650000000000003,0.38,0.33627049180327867,0.010840730975696792,0.34650000000000003,results\phase2\analysis\h3\h3_clip_sweep_clip_0_1.csv,,ran
+0.3,h3_clip_sweep_clip_0_3,0.368,0.406,0.3415655737704918,0.015120481531638925,0.35650000000000004,results\phase2\analysis\h3\h3_clip_sweep_clip_0_3.csv,,ran
+0.4,h3_clip_sweep_clip_0_4,0.41400000000000003,0.458,0.3644999999999999,0.028083358061314536,0.36950000000000005,results\phase2\analysis\h3\h3_clip_sweep_clip_0_4.csv,,ran
