@@ -349,6 +349,70 @@ any single one of the three raw numbers, is what "better" means from here
 on -- this is the number the upcoming H1-H7 sweep is measured against,
 replacing phase 1's plain `success_rate` gap entirely.
 
+## Results analysis
+
+### H4: epoch-count ceiling analysis
+
+Same question as phase 1's H4: does the `epochs` hyperparameter alone,
+pushed far beyond any realistic range (300, 30x the 10-epoch baseline),
+keep helping, plateau, or eventually hurt? Config: `clip_eps=0.2`,
+`gae_lambda=0.95`, `entropy_coef=0.01`, `minibatch_size=256`,
+`lr=0.0003`, `hidden_sizes=[64,64]` -- otherwise identical to
+`ppo_fixed_d_standard.yaml`, checkpointed every 5 epochs.
+
+<div align="center">
+<img src="results/phase2/analysis/epochs/epochs_analysis_success_return.svg" width="85%"><br><em>The three raw success_rate curves. covered is essentially flat from epoch 0 to 300; held-out collapses sharply around epoch 190-195.</em>
+</div>
+
+This is the clearest demonstration yet of exactly what phase 1 had no way
+to see. Between epoch 190 and 195:
+
+<div align="center">
+
+| epoch | overall | covered | held-out | weighted |
+|---|---|---|---|---|
+| 190 | 38.2% | 47.2% | 26.8% | 34.75% |
+| 195 | 31.0% | 47.2% | 6.6% | 22.85% |
+
+</div>
+
+`covered` does not move at all (47.2% both epochs, to three significant
+figures). `held-out` collapses by 20 points in a single 5-epoch step.
+`overall` -- the only number phase 1's version of this analysis could
+have reported -- shows a 7-point drop, small enough to plausibly read as
+noise on its own. Phase 1's single-population evaluation could not have
+distinguished "the policy got slightly worse" from "the policy stopped
+generalizing to anything it hadn't memorized" -- this split can, and does.
+
+<div align="center">
+<img src="results/phase2/analysis/epochs/epochs_analysis_weighted.svg" width="70%"><br><em>weighted_success_rate alone -- the same collapse, in the number actually used to pick a checkpoint.</em>
+</div>
+
+**Checkpoint selection itself was checked against this, not assumed
+safe.** The epoch that would have been picked under phase 1's old,
+unweighted criterion (`success_rate_overall`, best at epoch 175: overall
+38.4%, covered 47.2%, held-out 26.8%) and the epoch picked under the new
+weighted criterion (best at epoch 95) both land inside the safe,
+pre-collapse region -- in this particular run, the two selection rules
+happen to agree, not because the weighted criterion made no difference,
+but because neither one was fooled into reaching past epoch 190. The
+value of the split here is in what the *curve* reveals, not in a
+near-miss the new metric had to rescue this checkpoint from.
+
+**Going forward with epoch 95** -- the weighted-best checkpoint:
+
+<div align="center">
+
+| | value |
+|---|---|
+| hyperparameters | same as above (`clip_eps=0.2`, `gae_lambda=0.95`, `entropy_coef=0.01`, `minibatch_size=256`, `lr=0.0003`, `hidden_sizes=[64,64]`), stopped at epoch 95 |
+| `success_rate` (overall) | 38.2% |
+| `success_rate` (covered) | 47.2% |
+| `success_rate` (held-out) | 27.0% |
+| **`weighted_success_rate`** | **34.85%** |
+
+</div>
+
 ## Project structure
 
 ```
