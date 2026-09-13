@@ -1,0 +1,22 @@
+# Reproducibility check for H4/H3's clip_eps=0.2 held-out collapse (see
+# README): same D, same pi_beta, same environment -- only the PPO
+# training seed changes (minibatch ordering, optimizer state -- NOT
+# theta_initial, which is always pi_beta's weights regardless of seed).
+# If the same sharp, selective held-out collapse reappears here, it is
+# not a one-off fluke of that particular training trajectory.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.2
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 7
