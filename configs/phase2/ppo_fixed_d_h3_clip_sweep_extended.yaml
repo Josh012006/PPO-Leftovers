@@ -1,0 +1,24 @@
+# H3 extension (phase 2): does the clip_eps=0.2 held-out collapse (see
+# README, H4) also eventually appear at wider clip ranges, just later --
+# or does it genuinely not happen the same way? Same as
+# ppo_fixed_d_h3_clip_sweep.yaml but epochs doubled to 600 and restricted
+# to the two values that showed no selective held-out collapse within
+# 300 epochs. The first 300 epochs of this run are deterministic replays
+# of the original 300-epoch runs (same seed, same data, same trust-region
+# window) -- only epochs 300-600 are new information.
+
+epochs: 600
+minibatch_size: 256
+
+clip_eps: [0.3, 0.4]
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
