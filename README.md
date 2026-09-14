@@ -413,6 +413,98 @@ near-miss the new metric had to rescue this checkpoint from.
 
 </div>
 
+### H3: clip range, an unplanned detour into a narrow failure band
+
+Sweeping `clip_eps` (otherwise identical to H4's config, 300 epochs) at
+0.1, 0.3, and 0.4 -- `0.2` already covered by H4 -- produced an odd,
+non-monotonic pattern that took a real investigation to resolve.
+
+<div align="center">
+<img src="results/phase2/analysis/h3/h3_clip_sweep_clip_0_4_success_return.svg" width="70%"><br><em>clip_eps=0.4: noisier throughout, but no sustained held-out-specific collapse -- unlike 0.2's clean cliff (see H4 above).</em>
+</div>
+
+`0.1` stayed perfectly flat for the full 300 epochs. `0.3` showed only
+brief, simultaneous dips across all three populations together (not
+`held-out` alone), always recovering. `0.4` was noisier throughout but
+never collapsed the way `0.2` had -- and scored the best of the four.
+This raised an immediate objection: if `0.2`'s collapse really is
+`theta` drifting cumulatively away from the fixed `pi_old = pi_beta`
+anchor, a *wider* trust region should let that drift happen faster, not
+slower or not at all. Extending `0.3` and `0.4` to 600 epochs, and
+re-running `0.2` with a different training seed (same `D`, same
+`pi_beta`, only the training randomness changed) to rule out a one-off
+fluke, gave a clear answer: the seed change reproduced the same
+collapse almost exactly (epoch ~200-205 instead of ~190-195); `0.3`
+still showed nothing at 600 epochs; `0.4` eventually showed a real, but
+much noisier and more gradual, held-out-specific degradation only after
+epoch ~300.
+
+Since `clip_frac` and `entropy` are computed *over `D`* -- which contains
+zero held-out transitions -- they cannot see whatever is actually
+happening at held-out states by construction, and showed nothing unusual
+at the collapse epoch. Probing the network's own output distribution
+*directly at the held-out states* (cheap forward passes, no rollout, no
+gradient ever touches these states) told a different story:
+
+<div align="center">
+<img src="results/phase2/analysis/heldout_drift/heldout_drift.svg" width="95%"><br><em>KL(π_β‖π_θ) and entropy at held-out states drift smoothly and continuously throughout -- rising, falling to a minimum around epoch 150-185, then rising again -- with no discontinuity at the collapse epoch. Weight norm grows smoothly throughout, also uninformative about timing.</em>
+</div>
+
+Tracking each held-out state's action probabilities *individually*
+(rather than aggregated) found the mechanism directly: of the four
+held-out states, exactly one had two competing actions slowly trading
+probability over ~200 epochs, crossing at epoch 210.
+
+<div align="center">
+<img src="results/phase2/analysis/heldout_argmax_flip/heldout_argmax_flip.svg" width="95%"><br><em>Three of four held-out states never come close to an argmax flip. The fourth (state 386) has two actions drift smoothly toward each other for 200 epochs and cross -- a continuous probability drift producing a discontinuous, deterministic-argmax behavioral change.</em>
+</div>
+
+This explains *how* a smooth drift produces a sudden cliff, but not why
+`clip_eps=0.2` specifically. Testing `0.15` and `0.25` found that `0.25`
+collapses in the *identical* epoch-190-to-195 window as `0.2`, while
+`0.15` stays completely flat through the same window:
+
+<div align="center">
+<img src="results/phase2/analysis/h3_intermediate/h3_intermediate_clip_0_25_success_return.svg" width="70%"><br><em>clip_eps=0.25 collapses in the same epoch window as 0.2 (see H4), including a brief partial recovery around epoch 210 -- the same epoch state 386's argmax flip occurred at under clip_eps=0.2.</em>
+</div>
+
+Narrowing further (`0.175`, `0.275`) confirmed a real, narrow band with
+both edges clean:
+
+<div align="center">
+
+| `clip_eps` | 0.1 | 0.15 | 0.175 | **0.2** | **0.25** | 0.275 | 0.3 | 0.4 |
+|---|---|---|---|---|---|---|---|---|
+| sustained held-out collapse? | no | no | no | **yes** | **yes** | no* | no | no (later, gradual) |
+| best `weighted_success_rate` | 34.7% | 36.6% | 36.9% | 34.9% | 35.7% | 38.6% | 36.8% | **41.4%** |
+
+</div>
+
+\* `0.275` showed one brief dip (epoch 215-220) in the same epoch region
+as `0.2`/`0.25`'s collapse, but recovered fully by epoch 225 -- a
+flutter, not a lock-in.
+
+**Conclusion: this is an artifact of this specific `D`/optimization
+trajectory landing a close two-action decision boundary at one
+particular state, not a property of PPO's mechanism the exploitation-gap
+question needs to account for.** The band is narrow (0.2-0.25 out of the
+0.1-0.4 range tested), both neighbors are clean, and nothing about it
+generalizes into a claim like "moderate clip ranges are dangerous" --
+`0.4`, further from `0.2` than `0.25` is, remains the best-performing
+value tested. This thread is closed without a deeper mechanistic
+explanation of why this exact band; chasing that further would be
+investigating a curiosity of this one dataset's optimization landscape,
+not the exploitation gap itself.
+
+What *is* worth keeping: this entire detour started because the
+covered/held-out split caught something a plain `success_rate` would
+have shown only as a mild, easy-to-dismiss wobble. Every diagnostic tool
+already in this project (`clip_frac`, `entropy`, both computed over `D`)
+was blind to it by construction; only evaluating held-out states directly
+-- the whole point of requirement 3 -- made it visible at all. Whatever
+this specific band turns out to be, the evaluation redesign it surfaced
+is doing exactly the job it was built for.
+
 ## Project structure
 
 ```
