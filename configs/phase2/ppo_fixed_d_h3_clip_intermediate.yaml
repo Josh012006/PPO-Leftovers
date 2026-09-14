@@ -1,0 +1,24 @@
+# Narrows down WHY the held-out collapse (see README, H4) appears at
+# clip_eps=0.2 specifically: is it a narrow point, or part of a wider
+# band around 0.2? Same as ppo_fixed_d_h3_clip_sweep.yaml (300 epochs,
+# identical other hyperparameters, seed=0) but testing the two values
+# immediately adjacent to 0.2 on either side. If both show the same
+# sharp, selective held-out collapse (reproducing near the same epoch),
+# it's a band, not a coincidence tied to exactly 0.2. If neither does,
+# whatever makes 0.2 special is narrow and specific.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: [0.15, 0.25]
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
