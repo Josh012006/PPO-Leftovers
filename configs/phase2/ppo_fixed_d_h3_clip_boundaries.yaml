@@ -1,0 +1,22 @@
+# Refines the boundaries of the held-out collapse "band" found around
+# clip_eps in [0.2, 0.25] (see README, H4/H3): 0.15 stable, 0.2 and 0.25
+# both collapse in the identical epoch-190-to-195 window, 0.3 stable to
+# 600 epochs. Tests the midpoint of each open boundary. Same as
+# ppo_fixed_d_h3_clip_sweep.yaml (300 epochs, identical other
+# hyperparameters, seed=0) otherwise.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: [0.175, 0.275]
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
