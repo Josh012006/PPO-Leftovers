@@ -505,6 +505,30 @@ was blind to it by construction; only evaluating held-out states directly
 this specific band turns out to be, the evaluation redesign it surfaced
 is doing exactly the job it was built for.
 
+**Resolving "which clip_eps is best."** The initial 0.1→0.4 sweep looked
+like performance kept rising with no peak in sight -- but that used the
+single best epoch observed per run, which non-monotonic fixed-D training
+(see "Epoch-count ceiling analysis" in the phase-1 doc) makes an
+unreliable ranking criterion: an unstable config can post a high one-off
+peak right before collapsing. Extending the sweep out to `clip_eps=0.7`
+and switching the ranking criterion to the **mean** `weighted_success_rate`
+over the full run -- which a short-lived peak cannot inflate -- recovers
+a clean picture:
+
+<div align="center">
+<img src="results/phase2/analysis/h3_clip_eps_mean_weighted.svg" width="75%"><br><em>Mean weighted_success_rate vs. clip_eps, full run average. The two red points are the already-characterized 0.2/0.25 artifact, not a real dip in the underlying trend.</em>
+</div>
+
+A genuine peak at **`clip_eps=0.4`**, rising from 0.1 and falling away
+past 0.45 (0.55's dip is the same general instability described above,
+arriving earlier as `clip_eps` grows further; 0.6-0.7's partial recovery
+is noise from testing only one seed per value, not a second real peak).
+**`clip_eps=0.4` is adopted going forward** as this project's H3 answer:
+
+<div align="center">
+<img src="results/phase2/analysis/h3/h3_clip_sweep_clip_0_4_success_return.svg" width="80%"><br><em>clip_eps=0.4's own training curve -- the configuration this sweep confirms as best.</em>
+</div>
+
 ## Project structure
 
 ```
