@@ -1,0 +1,23 @@
+# Fills in the right-side mirror of clip_eps=0.4 for a symmetric
+# comparison: 0.525, 0.625, 0.65, 0.7 mirror the existing 0.275, 0.175,
+# 0.15, 0.1 offsets already tested on the left. Same as
+# ppo_fixed_d_h3_clip_sweep.yaml (300 epochs, identical other
+# hyperparameters, seed=0) otherwise. Selection should use mean/last-50
+# weighted_success_rate, NOT peak "best" -- see README, H3 -- since a
+# late, unstable peak is not informative here.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: [0.525, 0.625, 0.65, 0.7]
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.01
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
