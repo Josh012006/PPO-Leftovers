@@ -529,6 +529,34 @@ is noise from testing only one seed per value, not a second real peak).
 <img src="results/phase2/analysis/h3/h3_clip_sweep_clip_0_4_success_return.svg" width="80%"><br><em>clip_eps=0.4's own training curve -- the configuration this sweep confirms as best.</em>
 </div>
 
+### H5: entropy coefficient
+
+Same design as phase 1's H5 -- `entropy_coef ∈ {0.0, 0.003, 0.01, 0.03, 0.1}`,
+`clip_eps` now fixed at this project's H3 answer (0.4), 300 epochs,
+ranked by mean `weighted_success_rate` from the start this time:
+
+<div align="center">
+
+| `entropy_coef` | **0.0** | 0.003 | 0.01 | 0.03 | 0.1 |
+|---|---|---|---|---|---|
+| mean `weighted_success_rate` | **0.377** | 0.372 | 0.364 | 0.336 | 0.224 |
+| std | **0.024** | 0.027 | 0.028 | 0.042 | 0.053 |
+
+</div>
+
+Monotonic, not a U-shape: less entropy pressure is consistently better
+and more stable here, all the way down to `entropy_coef=0.0`. No further
+sweeping needed on this side -- `0.0` is a hard floor, not an interior
+point with room to keep searching past it.
+
+<div align="center">
+<img src="results/phase2/analysis/h5/h5_entropy_sweep_ent_0_0_success_return.svg" width="80%"><br><em>entropy_coef=0.0: steady improvement across all three populations for the full 300 epochs, no instability.</em>
+</div>
+
+**`entropy_coef=0.0` is adopted going forward.** Current configuration:
+`clip_eps=0.4`, `entropy_coef=0.0`, otherwise identical to
+`ppo_fixed_d_standard.yaml`.
+
 ## Project structure
 
 ```

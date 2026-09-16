@@ -1,0 +1,24 @@
+# H2 (phase 2): does the advantage estimate itself misrank actions once
+# theta drifts from the fixed critic that produced it? Same design as
+# phase 1's H2 -- gae_lambda swept across its full valid range, clip_eps
+# and entropy_coef now fixed at this project's H3/H5 answers (0.4, 0.0).
+# gae_lambda controls how much the advantage leans on pi_beta's own
+# (possibly stale, by later epochs) critic vs. D's directly observed
+# rewards -- lambda->0 bootstraps through the critic at every step,
+# lambda->1 uses the real accumulated trajectory return.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.4
+gamma: 0.99
+gae_lambda: [0.0, 0.5, 0.90, 0.95, 1.0]
+entropy_coef: 0.0
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0

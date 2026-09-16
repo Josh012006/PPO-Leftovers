@@ -1,0 +1,6 @@
+gae_lambda,prefix,best,best_overall,mean,std,final,csv_path,best_checkpoint_epoch,status,log_path
+0.95,h2_gae_sweep_gae_0_95,0.40700000000000003,0.454,0.3767131147540984,0.024395945533427173,0.4065,results\phase2\analysis\h2\h2_gae_sweep_gae_0_95.csv,,ran,results\phase2\analysis\h2\h2_gae_sweep_gae_0_95.log
+0.9,h2_gae_sweep_gae_0_9,0.4105,0.468,0.31781967213114753,0.040621836572924376,0.3675,results\phase2\analysis\h2\h2_gae_sweep_gae_0_9.csv,,ran,results\phase2\analysis\h2\h2_gae_sweep_gae_0_9.log
+0.5,h2_gae_sweep_gae_0_5,0.37449999999999994,0.414,0.2934016393442623,0.05347708385156916,0.3075,results\phase2\analysis\h2\h2_gae_sweep_gae_0_5.csv,,ran,results\phase2\analysis\h2\h2_gae_sweep_gae_0_5.log
+0.0,h2_gae_sweep_gae_0_0,0.3205,0.39,0.2268770491803279,0.038215360757347404,0.264,results\phase2\analysis\h2\h2_gae_sweep_gae_0_0.csv,,ran,results\phase2\analysis\h2\h2_gae_sweep_gae_0_0.log
+1.0,h2_gae_sweep_gae_1_0,0.36849999999999994,0.42,0.32422950819672125,0.03308204117172082,0.311,results\phase2\analysis\h2\h2_gae_sweep_gae_1_0.csv,,ran,results\phase2\analysis\h2\h2_gae_sweep_gae_1_0.log

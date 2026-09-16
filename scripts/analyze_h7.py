@@ -58,7 +58,16 @@ to stdout, one line per combination as it completes, so concurrent
 workers can never interleave mid-line. A failure in one combination is
 caught, logged to that combination's own `.log` file, and reported in
 the final summary table's `status` column as `FAILED: ...` -- it does
-not stop or corrupt the other combinations in flight. `--cpu-count` is
+not stop or corrupt the other combinations in flight. Each worker's log
+file is line-buffered (`open(..., buffering=1)`), so lines appear on disk
+as each epoch checkpoint happens, not only once that combination finishes
+-- open a `.log` file at any point during a run to see live progress
+(e.g. `Get-Content -Wait <path>` in PowerShell to watch it update). The
+main process also prints a heartbeat line every 30 seconds while nothing
+has completed yet, so a long-running sweep never goes silent even before
+the first combination finishes -- Task Manager (or `htop`/`ps` on
+Unix) showing `cpu-count` busy python processes is another immediate,
+no-log-file way to confirm work is happening. `--cpu-count` is
 clamped to both the number of pending (non-skipped) combinations and
 `os.cpu_count()`, whichever is smaller, with a note printed if it had to
 be. Memory note: each worker holds its own full copy of `D` in memory --
@@ -105,7 +114,7 @@ import os
 import sys
 import time
 import traceback
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -165,7 +174,7 @@ def _run_one_combo(task: dict) -> dict:
     try:
         cfg = PPOHyperparams(**task["combo"])
         set_global_seed(cfg.seed)
-        with open(log_path, "w") as logf, contextlib.redirect_stdout(logf):
+        with open(log_path, "w", buffering=1) as logf, contextlib.redirect_stdout(logf):
             summary = run_single_analysis(
                 eval_env=_WORKER["env"],
                 dataset=_WORKER["dataset"],
@@ -452,22 +461,34 @@ def main():
             initargs=(env_cfg_dict, eval_env.layout, args.dataset, prior_state_dict, ceiling_success_rates, covered_starts, held_out_starts),
         ) as executor:
             futures = {executor.submit(_run_one_combo, t): t for t in tasks}
-            for fut in as_completed(futures):
-                t = futures[fut]
-                n_done += 1
-                elapsed = (time.time() - t_start) / 60
-                try:
-                    res = fut.result()
-                except Exception as e:  # pragma: no cover -- _run_one_combo already catches its own exceptions
-                    res = {"prefix": t["prefix"], "status": f"FAILED: {e}", "csv_path": None, "log_path": f"{out_dir}/{t['prefix']}.log"}
-                results.append(res)
-                if str(res.get("status", "")).startswith("FAILED"):
-                    print(f"[{n_done}/{len(pending)}] {t['prefix']}: FAILED -- {res['status']} (see {res.get('log_path')})  [{elapsed:.1f} min elapsed]")
-                else:
+            pending_futures = set(futures.keys())
+            heartbeat_seconds = 30
+            while pending_futures:
+                done, pending_futures = wait(pending_futures, timeout=heartbeat_seconds, return_when=FIRST_COMPLETED)
+                if not done:
+                    elapsed = (time.time() - t_start) / 60
                     print(
-                        f"[{n_done}/{len(pending)}] {t['prefix']}: done -- best_weighted={res['best']:.3f} "
-                        f"mean={res['mean']:.3f} std={res['std']:.3f}  [{elapsed:.1f} min elapsed]  (log: {res.get('log_path')})"
+                        f"... still running ({n_done}/{len(pending)} done, {elapsed:.1f} min elapsed) -- "
+                        f"per-epoch progress is in each combination's own .log file under {out_dir}",
+                        flush=True,
                     )
+                    continue
+                for fut in done:
+                    t = futures[fut]
+                    n_done += 1
+                    elapsed = (time.time() - t_start) / 60
+                    try:
+                        res = fut.result()
+                    except Exception as e:  # pragma: no cover -- _run_one_combo already catches its own exceptions
+                        res = {"prefix": t["prefix"], "status": f"FAILED: {e}", "csv_path": None, "log_path": f"{out_dir}/{t['prefix']}.log"}
+                    results.append(res)
+                    if str(res.get("status", "")).startswith("FAILED"):
+                        print(f"[{n_done}/{len(pending)}] {t['prefix']}: FAILED -- {res['status']} (see {res.get('log_path')})  [{elapsed:.1f} min elapsed]")
+                    else:
+                        print(
+                            f"[{n_done}/{len(pending)}] {t['prefix']}: done -- best_weighted={res['best']:.3f} "
+                            f"mean={res['mean']:.3f} std={res['std']:.3f}  [{elapsed:.1f} min elapsed]  (log: {res.get('log_path')})"
+                        )
 
     summary_df = pd.DataFrame(results)
     summary_path = out_dir / "h7_sweep_summary.csv"
