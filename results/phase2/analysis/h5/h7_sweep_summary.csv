@@ -1,0 +1,6 @@
+entropy_coef,prefix,best,best_overall,mean,std,final,csv_path,best_checkpoint_epoch,status
+0.0,h5_entropy_sweep_ent_0_0,0.40700000000000003,0.454,0.3767131147540984,0.024395945533427173,0.4065,results\phase2\analysis\h5\h5_entropy_sweep_ent_0_0.csv,,ran
+0.003,h5_entropy_sweep_ent_0_003,0.4075,0.45,0.3724918032786885,0.02659518938380879,0.395,results\phase2\analysis\h5\h5_entropy_sweep_ent_0_003.csv,,ran
+0.01,h5_entropy_sweep_ent_0_01,0.41400000000000003,0.458,0.3644999999999999,0.028083358061314536,0.36950000000000005,results\phase2\analysis\h5\h5_entropy_sweep_ent_0_01.csv,,ran
+0.03,h5_entropy_sweep_ent_0_03,0.406,0.448,0.3362950819672131,0.04162675192000736,0.2975,results\phase2\analysis\h5\h5_entropy_sweep_ent_0_03.csv,,ran
+0.1,h5_entropy_sweep_ent_0_1,0.33799999999999997,0.38,0.22384426229508195,0.05270179795981084,0.17500000000000002,results\phase2\analysis\h5\h5_entropy_sweep_ent_0_1.csv,,ran

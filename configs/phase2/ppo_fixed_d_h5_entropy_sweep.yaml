@@ -1,0 +1,25 @@
+# H5 (phase 2): does entropy_coef shorten the exploitation gap, or only
+# damp the training oscillation's amplitude? Same design as phase 1's H5
+# (docs/PHASE1_STOCHASTIC_MAZE.md) -- entropy_coef swept across two
+# orders of magnitude, clip_eps fixed at this project's H3 answer (0.4),
+# everything else identical to ppo_fixed_d_standard.yaml. Note:
+# entropy_coef=0.0 is itself one of the values under test here, not a
+# "neutral" baseline -- zeroing it during training is an intervention on
+# the trajectory, not preprocessing (see docs/PHASE1_STOCHASTIC_MAZE.md's
+# note on H5 for why this is easy to get backwards).
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.4
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: [0.0, 0.003, 0.01, 0.03, 0.1]
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
