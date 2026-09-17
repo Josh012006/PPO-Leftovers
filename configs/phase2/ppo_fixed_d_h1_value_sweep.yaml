@@ -1,0 +1,21 @@
+# H1 (phase 2): does the critic accurately represent the information D
+# actually contains, or is that a limiting factor? Same design as phase
+# 1's H1 -- value_coef swept across a wide range including 0.0 (no value
+# loss at all), clip_eps/entropy_coef/gae_lambda now fixed at this
+# project's H3/H5/H2 answers (0.4, 0.0, 0.95).
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.4
+gamma: 0.99
+gae_lambda: 0.95
+entropy_coef: 0.0
+value_coef: [0.0, 0.1, 0.25, 0.5, 1.0]
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0

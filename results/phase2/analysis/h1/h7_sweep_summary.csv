@@ -1,0 +1,6 @@
+value_coef,prefix,best,best_overall,mean,std,final,csv_path,best_checkpoint_epoch,status,log_path
+0.5,h1_value_sweep_val_0_5,0.40700000000000003,0.454,0.3767131147540984,0.024395945533427173,0.4065,results\phase2\analysis\h1\h1_value_sweep_val_0_5.csv,,ran,results\phase2\analysis\h1\h1_value_sweep_val_0_5.log
+0.1,h1_value_sweep_val_0_1,0.41400000000000003,0.458,0.3757868852459016,0.023413930863269095,0.40549999999999997,results\phase2\analysis\h1\h1_value_sweep_val_0_1.csv,,ran,results\phase2\analysis\h1\h1_value_sweep_val_0_1.log
+0.0,h1_value_sweep_val_0_0,0.41400000000000003,0.458,0.37594262295081965,0.02411657423859086,0.403,results\phase2\analysis\h1\h1_value_sweep_val_0_0.csv,,ran,results\phase2\analysis\h1\h1_value_sweep_val_0_0.log
+1.0,h1_value_sweep_val_1_0,0.40549999999999997,0.454,0.37602459016393436,0.027187531797607176,0.40449999999999997,results\phase2\analysis\h1\h1_value_sweep_val_1_0.csv,,ran,results\phase2\analysis\h1\h1_value_sweep_val_1_0.log
+0.25,h1_value_sweep_val_0_25,0.40700000000000003,0.456,0.37478688524590165,0.02529352008855124,0.406,results\phase2\analysis\h1\h1_value_sweep_val_0_25.csv,,ran,results\phase2\analysis\h1\h1_value_sweep_val_0_25.log

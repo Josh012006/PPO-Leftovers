@@ -557,6 +557,19 @@ point with room to keep searching past it.
 `clip_eps=0.4`, `entropy_coef=0.0`, otherwise identical to
 `ppo_fixed_d_standard.yaml`.
 
+### H2: GAE lambda
+
+`gae_lambda ∈ {0.0, 0.5, 0.90, 0.95, 1.0}`, `clip_eps=0.4` and
+`entropy_coef=0.0` now both fixed. A genuine interior peak this time, no
+mirage to resolve: mean `weighted_success_rate` rises from 0.227 (λ=0)
+to 0.293 (λ=0.5) to 0.318 (λ=0.90) to **0.377 (λ=0.95)**, then falls to
+0.324 (λ=1.0). `λ=0.95` was already this project's default -- H2
+confirms the existing setting rather than improving on it (its numbers
+match H5's own `entropy_coef=0.0` row exactly, since that row already
+was `clip_eps=0.4, entropy_coef=0.0, gae_lambda=0.95`). **`gae_lambda=0.95`
+stays.** Current best mean `weighted_success_rate` (0.377) is now
+79.7% of `π_D*`'s own weighted ceiling (0.4725).
+
 ## Project structure
 
 ```
