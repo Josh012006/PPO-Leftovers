@@ -570,6 +570,17 @@ was `clip_eps=0.4, entropy_coef=0.0, gae_lambda=0.95`). **`gae_lambda=0.95`
 stays.** Current best mean `weighted_success_rate` (0.377) is now
 79.7% of `π_D*`'s own weighted ceiling (0.4725).
 
+### H1: value coefficient
+
+`value_coef ∈ {0.0, 0.1, 0.25, 0.5, 1.0}`, `clip_eps=0.4`,
+`entropy_coef=0.0`, `gae_lambda=0.95` all now fixed. Same null result as
+phase 1: mean `weighted_success_rate` ranges from 0.3748 to 0.3767 across
+the whole swept range -- a spread of 0.002, well inside noise. **H1 is
+closed with no effect, exactly as in phase 1.** This is the intended
+setup for the `value_coef × max_grad_norm` cross-sweep next: a null
+result in isolation is precisely what that cross-sweep exists to
+double-check, not a coincidence to move past.
+
 ## Project structure
 
 ```
