@@ -581,6 +581,49 @@ setup for the `value_coef × max_grad_norm` cross-sweep next: a null
 result in isolation is precisely what that cross-sweep exists to
 double-check, not a coincidence to move past.
 
+### Cross-sweep 1/3: clip_eps x gae_lambda
+
+Motivated by a direct methodological concern raised mid-project: H3-H1's
+sequential, one-hyperparameter-at-a-time search finds each dimension's
+best value while holding the others at whatever was previously chosen --
+which is exactly right if hyperparameters don't interact, and can settle
+into a local optimum if they do. `clip_eps` and `gae_lambda` were the
+first pair checked, since the mechanism already documented for both
+(README, H3's clip-width-dependent drift; GAE's reliance on the critic's
+own possibly-stale estimate) plausibly compound: how far `theta` can
+drift per update, and how trustworthy the signal driving that drift is,
+are not obviously separable questions. Grid: `clip_eps ∈ {0.3, 0.4, 0.5,
+0.55, 0.6}` x `gae_lambda ∈ {0.85, 0.90, 0.95, 1.0}` (not every cell
+filled -- widened twice, first past 0.4's sequential optimum, then again
+once 0.5 turned out to beat it), `entropy_coef=0.0` fixed (H5), ranked by
+mean `weighted_success_rate` as usual:
+
+<div align="center">
+
+| `clip_eps` ＼ `gae_lambda` | 0.85 | 0.90 | 0.95 | 1.00 |
+|---|---|---|---|---|
+| 0.30 | -- | 0.338 | 0.350 | 0.320 |
+| 0.40 | -- | 0.318 | **0.377** (sequential choice) | 0.324 |
+| 0.50 | 0.377 | 0.407 | 0.394 | 0.305 |
+| 0.55 | 0.360 | **0.410** | 0.392 | -- |
+| 0.60 | 0.374 | 0.399 | 0.369 | -- |
+
+</div>
+
+A genuine interior peak, not another edge mirage: every direction away
+from `(0.55, 0.90)` decreases. **The sequential search's answer
+(`clip_eps=0.4, gae_lambda=0.95`, 0.377) was a real local optimum, not
+the joint one** -- `(0.55, 0.90)` reaches 0.410, ~9% higher, confirming
+the interaction-blindness concern was not merely theoretical here.
+
+<div align="center">
+<img src="results/phase2/analysis/cross_clip_gae/cross_clip_gae_clip_0_55_gae_0_9_success_return.svg" width="80%"><br><em>clip_eps=0.55, gae_lambda=0.90: covered reaches ~0.59-0.60, held-out settles at a stable ~0.30-0.31 from epoch ~210 on -- no collapse, a genuine sustained improvement.</em>
+</div>
+
+**`clip_eps=0.55, gae_lambda=0.90` replaces the sequential choice going
+forward.** Current configuration: `clip_eps=0.55`, `gae_lambda=0.90`,
+`entropy_coef=0.0`, otherwise identical to `ppo_fixed_d_standard.yaml`.
+
 ## Project structure
 
 ```

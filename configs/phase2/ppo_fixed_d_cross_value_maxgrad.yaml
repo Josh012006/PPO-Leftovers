@@ -1,0 +1,30 @@
+# Cross-sweep 2/3: value_coef x max_grad_norm. Same design as phase 1's
+# H7 x H1 cross-sweep -- checks whether H1's null result (README, H1:
+# value_coef alone had no measurable effect, 0.375-0.377 across its
+# whole tested range) was actually max_grad_norm clipping the gradient
+# before value_coef's weight could matter, masking a real effect.
+# clip_eps=0.55, gae_lambda=0.90, entropy_coef=0.0 now fixed (this
+# project's updated best, from the clip_eps x gae_lambda cross-sweep).
+#
+# value_coef's range (0.0-1.0) is the SAME range H1 already tested alone
+# with a clean null result across it, so little risk of a hidden edge
+# effect there. max_grad_norm has never been individually swept in phase
+# 2 at all -- widened well past phase 1's {0.1, 0.5, 1.0} on both sides
+# (0.05 tighter, 2.0/5.0 looser) specifically to avoid the same
+# edge-effect surprise clip_eps x gae_lambda needed a second pass for.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: [0.0, 0.5, 1.0]
+max_grad_norm: [0.05, 0.1, 0.5, 1.0, 2.0, 5.0]
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
