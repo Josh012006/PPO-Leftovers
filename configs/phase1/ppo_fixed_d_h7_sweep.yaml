@@ -13,11 +13,11 @@
 #
 # Grid: {0.1, 0.5, 1.0} x {0.0, 0.5, 1.0} = 9 combinations (each up to
 # 300 epochs + 61 evaluations of 500 episodes -- expect this to take a
-# while; the script is resumable, see --force in analyze_h7.py).
+# while; the script is resumable, see --force in analyze_sweep.py).
 # 0.1/1.0 are deliberately the tight/loose extremes around the current
 # 0.5 default on each axis; 0.0/1.0 are value_coef's own tested extremes
 # from the earlier single-axis sweep. Edit these lists directly to widen
-# or narrow the grid -- analyze_h7.py handles any list length.
+# or narrow the grid -- analyze_sweep.py handles any list length.
 
 epochs: 300
 minibatch_size: 256

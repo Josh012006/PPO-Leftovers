@@ -1,4 +1,4 @@
-"""Shared logic between scripts/analyze_epochs.py and scripts/analyze_h7.py
+"""Shared logic between scripts/analyze_epochs.py and scripts/analyze_sweep.py
 (and any future single-window analysis script): the plotting functions and
 the "train one fixed-D PPO config for up to `epochs` epochs, checkpointing
 live eval every N epochs" routine. Not a standalone entrypoint -- import
@@ -276,7 +276,7 @@ def run_single_analysis(
     project started from could.
 
     `log_prefix` is prepended to every per-epoch print line -- used by
-    analyze_h7.py to make clear, in a long combined log, which grid
+    analyze_sweep.py to make clear, in a long combined log, which grid
     combination a given line belongs to.
 
     `save_best_checkpoint_path`, if given, tracks the network state at

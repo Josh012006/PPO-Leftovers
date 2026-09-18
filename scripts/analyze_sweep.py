@@ -1,16 +1,13 @@
-"""Multi-hyperparameter (grid/cross) sweep on top of the same single-window
-analysis scripts/analyze_epochs.py and scripts/_analysis_lib.py already use.
+"""General-purpose multi-hyperparameter (grid/cross) sweep on top of the
+same single-window analysis scripts/analyze_epochs.py and
+scripts/_analysis_lib.py already use -- not tied to any one hypothesis
+label; used for every individual sweep (H1-H5) and every cross-sweep in
+this project.
 
 Takes ONE YAML config where every PPOHyperparams field is either a single
 value (held fixed across the whole sweep) or a YAML list (swept). If more
 than one field is a list, this runs the full cartesian product across all
-of them -- a genuine cross/grid sweep, not just one axis at a time. This is
-how scripts/analyze_epochs.py's separate clip_eps / entropy_coef / gae_lambda
-/ value_coef sweeps could have been written as a single invocation each, and
-is built for exactly this project's next step: a max_grad_norm x value_coef
-cross sweep, to check whether a tighter max_grad_norm surfaces the
-gradient-clipping interference a value_coef-only sweep couldn't trigger at
-the default max_grad_norm=0.5 (see README, "Value coefficient sweep").
+of them -- a genuine cross/grid sweep, not just one axis at a time.
 
 `hidden_sizes` is special-cased, since a single hidden_sizes value is
 ALREADY a YAML list (e.g. `[64, 64]`) and would otherwise be
@@ -28,7 +25,9 @@ to mean anything.
 Resumable: if `<prefix>.csv` for a given combination already exists in
 --out-dir, that combination is skipped (its existing CSV is read back in
 for the summary table) unless --force is passed. Useful for a grid large
-enough that you might want to stop and resume it.
+enough that you might want to stop and resume it -- or for widening an
+existing grid after the fact: reuse the same --out-dir/--base-prefix with
+a config that adds new values, and only the new combinations actually run.
 
 Parallel execution (--cpu-count, default 1): with `--cpu-count N > 1`, up
 to N combinations train concurrently in separate worker PROCESSES (this
@@ -74,15 +73,15 @@ be. Memory note: each worker holds its own full copy of `D` in memory --
 size `--cpu-count` accordingly for a large `D` on a memory-constrained
 machine.
 
-Outputs, all under --out-dir (default results/analysis/h7/):
+Outputs, all under --out-dir (default results/phase2/analysis/sweep/):
   one <base-prefix>_<swept-field>_<value>[..._<swept-field>_<value>].csv
   and matching _success_return/_clip_entropy .svg/.png PER COMBINATION
   (exactly as scripts/analyze_epochs.py produces for a single run), plus
   a per-combination .log file (see "Parallel execution" above -- written
   regardless of --cpu-count, so sequential and parallel runs produce the
   same artifacts), plus:
-  h7_sweep_summary.csv -- one row per combination: swept field values,
-                           best/mean/std/final weighted_success_rate, csv path
+  sweep_summary.csv -- one row per combination: swept field values,
+                        best/mean/std/final weighted_success_rate, csv path
 
 Every checkpoint in every combination is evaluated THREE ways --
 overall/covered/held-out -- and combined into weighted_success_rate (see
@@ -92,16 +91,16 @@ picking "the best combination" from this sweep already accounts for
 overfitting risk, not just raw performance.
 
 Usage:
-    python scripts/analyze_h7.py \
+    python scripts/analyze_sweep.py \
         --env-config configs/phase2/env_maze.yaml \
         --dataset results/phase2/dataset_D.pkl \
         --prior-checkpoint results/phase2/prior_checkpoint.pt \
         --pi-d-star-empirical results/phase2/pi_d_star_empirical.pkl \
         --start-tiers-config configs/phase2/start_tiers.yaml \
-        --sweep-config configs/phase2/ppo_fixed_d_h7_sweep.yaml \
-        --base-prefix h7_clip_0_3_ent_0_01_gae_0_90 \
+        --sweep-config configs/phase2/ppo_fixed_d_cross_value_maxgrad.yaml \
+        --base-prefix cross_value_maxgrad \
         --checkpoint-every 5 --eval-episodes 500 --eval-seed 24680 \
-        --out-dir results/phase2/analysis/h7 \
+        --out-dir results/phase2/analysis/cross_value_maxgrad \
         --cpu-count 4
 """
 from __future__ import annotations
@@ -280,7 +279,7 @@ def main():
     parser.add_argument("--checkpoint-every", type=int, default=5)
     parser.add_argument("--eval-episodes", type=int, default=500)
     parser.add_argument("--eval-seed", type=int, default=24680)
-    parser.add_argument("--out-dir", default="results/phase2/analysis/h7")
+    parser.add_argument("--out-dir", default="results/phase2/analysis/sweep")
     parser.add_argument("--force", action="store_true", help="Re-run combinations even if their CSV already exists.")
     parser.add_argument(
         "--cpu-count",
@@ -299,7 +298,7 @@ def main():
     combos = generate_combinations(fixed, swept)
     swept_keys = list(swept.keys())
 
-    print(f"=== H7 grid sweep: {len(combos)} combination(s) ===")
+    print(f"=== Grid sweep: {len(combos)} combination(s) ===")
     if swept_keys:
         print(f"Swept fields: {swept_keys}")
         for key in swept_keys:
@@ -491,7 +490,7 @@ def main():
                         )
 
     summary_df = pd.DataFrame(results)
-    summary_path = out_dir / "h7_sweep_summary.csv"
+    summary_path = out_dir / "sweep_summary.csv"
     summary_df.to_csv(summary_path, index=False)
 
     total_min = (time.time() - t_start) / 60

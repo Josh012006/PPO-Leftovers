@@ -249,10 +249,10 @@ import numpy as np
 import pandas as pd
 import torch
 
-from _analysis_lib import compute_ceiling_success_rate, compute_sa_counts, run_single_analysis
+from _analysis_lib import compute_ceiling_success_rates, compute_sa_counts, run_single_analysis
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
-from ppo_exploitation.eval.evaluate import make_neural_act_fn
+from ppo_exploitation.eval.evaluate import DEFAULT_EVAL_WEIGHTS, get_tier_start_lists, make_neural_act_fn
 from ppo_exploitation.ppo.networks import ActorCritic
 from ppo_exploitation.reference.experience_optimal import (
     compute_true_value_of_policy,
@@ -261,6 +261,7 @@ from ppo_exploitation.utils.config import (
     MazeEnvConfig,
     PPOHyperparams,
     ReferenceConfig,
+    StartTierConfig,
 )
 from ppo_exploitation.utils.seeding import set_global_seed
 
@@ -369,27 +370,27 @@ def main():
 
     parser.add_argument(
         "--env-config",
-        default="configs/env_maze.yaml",
+        default="configs/phase2/env_maze.yaml",
     )
 
     parser.add_argument(
         "--dataset",
-        default="results/dataset_D.pkl",
+        default="results/phase2/dataset_D.pkl",
     )
 
     parser.add_argument(
         "--prior-checkpoint",
-        default="results/prior_checkpoint.pt",
+        default="results/phase2/prior_checkpoint.pt",
     )
 
     parser.add_argument(
         "--pi-d-star",
-        default="results/pi_d_star_empirical.pkl",
+        default="results/phase2/pi_d_star_empirical.pkl",
     )
 
     parser.add_argument(
         "--pi-d-star-cross-check",
-        default="results/pi_d_star_true_restricted.pkl",
+        default="results/phase2/pi_d_star_true_restricted.pkl",
         help=(
             "A second pi_D* definition, used to build a STRICTER "
             "disagreement flag: a state only counts as a real "
@@ -402,12 +403,28 @@ def main():
 
     parser.add_argument(
         "--reference-config",
-        default="configs/reference.yaml",
+        default="configs/phase2/reference.yaml",
     )
 
     parser.add_argument(
         "--best-config",
-        default="configs/ppo_fixed_d_best_config.yaml",
+        default="configs/phase2/ppo_fixed_d_best_config.yaml",
+    )
+
+    parser.add_argument(
+        "--start-tiers-config",
+        default="configs/phase2/start_tiers.yaml",
+        help="Required for the weighted_success_rate used to track the best checkpoint during "
+        "retraining (see README, 'Our new starting point').",
+    )
+
+    parser.add_argument(
+        "--eval-weights",
+        type=float,
+        nargs=3,
+        default=list(DEFAULT_EVAL_WEIGHTS),
+        metavar=("OVERALL", "COVERED", "HELD_OUT"),
+        help=f"Weights for the three eval modes, must sum to 1.0 (default {DEFAULT_EVAL_WEIGHTS}).",
     )
 
     parser.add_argument(
@@ -458,7 +475,7 @@ def main():
 
     parser.add_argument(
         "--out-dir",
-        default="results/analysis/policy_agreement",
+        default="results/phase2/analysis/policy_agreement",
     )
 
     parser.add_argument(
@@ -492,6 +509,14 @@ def main():
         layout_seed=env_cfg.layout_seed,
         num_start_states=env_cfg.num_start_states,
         gamma=env_cfg.gamma,
+    )
+
+    tier_cfg = StartTierConfig.from_yaml(args.start_tiers_config)
+    covered_starts, held_out_starts = get_tier_start_lists(env, tier_cfg)
+    eval_weights = tuple(args.eval_weights)
+    print(
+        f"Loaded start tiers from {args.start_tiers_config}: {len(covered_starts)} covered, "
+        f"{len(held_out_starts)} held-out. Weights (overall/covered/held_out): {eval_weights}."
     )
 
     dataset = load_dataset(args.dataset)
@@ -581,16 +606,20 @@ def main():
 
         best_ckpt_path = out_dir / "best_config_checkpoint.pt"
 
-        ceiling_success_rate = compute_ceiling_success_rate(
+        ceiling_success_rates = compute_ceiling_success_rates(
             env,
             args.pi_d_star,
             args.eval_episodes,
             args.eval_seed,
+            covered_starts,
+            held_out_starts,
+            weights=eval_weights,
         )
 
         print(
-            f"pi_D* ceiling under this run's eval protocol: "
-            f"success_rate={ceiling_success_rate:.3f}"
+            f"pi_D* ceiling under this run's eval protocol: overall={ceiling_success_rates['overall']:.3f}, "
+            f"covered={ceiling_success_rates['covered']:.3f}, held_out={ceiling_success_rates['held_out']:.3f}, "
+            f"weighted={ceiling_success_rates['weighted']:.3f}"
         )
 
         print(
@@ -603,13 +632,16 @@ def main():
             eval_env=env,
             dataset=dataset,
             prior_state_dict=prior_state_dict,
-            ceiling_success_rate=ceiling_success_rate,
+            ceiling_success_rates=ceiling_success_rates,
             cfg=cfg,
             checkpoint_every=args.checkpoint_every,
             eval_episodes=args.eval_episodes,
             eval_seed=args.eval_seed,
             out_dir=out_dir,
             prefix="best_config_retrain",
+            covered_starts=covered_starts,
+            held_out_starts=held_out_starts,
+            weights=eval_weights,
             title_suffix="best configuration retrain",
             verbose=True,
             save_best_checkpoint_path=best_ckpt_path,

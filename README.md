@@ -320,7 +320,7 @@ This is not a cosmetic addition. `scripts/eval/evaluate.py`'s
 `evaluate_policy_weighted` is now the single shared implementation behind
 every check in this project: `scripts/05_evaluate_all.py`'s final report,
 the epoch/hyperparameter sweeps (`scripts/analyze_epochs.py`,
-`scripts/analyze_h7.py` -- checkpoint *selection* during training now
+`scripts/analyze_sweep.py` -- checkpoint *selection* during training now
 uses the weighted number, not raw `success_rate`), and both remaining
 verification scripts (`scripts/verify_task_difficulty.py`'s training
 curve, `scripts/verify_overfitting_detectable.py`'s comparison, and

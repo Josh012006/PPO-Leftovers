@@ -12,7 +12,7 @@ files (varying e.g. clip_eps) to probe other hyperparameters against the
 same epoch-count axis -- see README, "Results analysis" for the
 clip_eps=0.1/0.2/0.3/0.4 sweep this was used for. For sweeping several
 hyperparameters (including cross/grid sweeps) in one invocation, see
-scripts/analyze_h7.py instead -- this script always trains exactly one
+scripts/analyze_sweep.py instead -- this script always trains exactly one
 config per run.
 
 Every checkpoint is evaluated THREE ways -- overall/covered/held-out --
