@@ -1,0 +1,26 @@
+# Extends the clip_eps x gae_lambda cross-sweep: clip_eps=0.5 (the edge
+# of the first grid) beat this project's sequentially-found best
+# (clip_eps=0.4, gae_lambda=0.95, mean=0.377) with mean=0.407 at
+# gae_lambda=0.90 -- but sitting on the grid's edge means it's unclear
+# whether 0.5 is a real peak or just a point on a still-rising trend.
+# Widens clip_eps further (0.55, 0.6) and adds gae_lambda=0.85 below the
+# existing range. Use the SAME --out-dir/--base-prefix as the first
+# cross-sweep (results/phase2/analysis/cross_clip_gae, "cross_clip_gae")
+# so (0.5, 0.90) and (0.5, 0.95), already computed there, are
+# automatically skipped rather than re-run.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: [0.5, 0.55, 0.6]
+gamma: 0.99
+gae_lambda: [0.85, 0.90, 0.95]
+entropy_coef: 0.0
+value_coef: 0.5
+max_grad_norm: 0.5
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
