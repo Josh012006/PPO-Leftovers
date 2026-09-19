@@ -581,7 +581,7 @@ setup for the `value_coef × max_grad_norm` cross-sweep next: a null
 result in isolation is precisely what that cross-sweep exists to
 double-check, not a coincidence to move past.
 
-### Cross-sweep: clip_eps x gae_lambda
+### Cross-sweep 1/3: clip_eps x gae_lambda
 
 Motivated by a direct methodological concern raised mid-project: H3-H1's
 sequential, one-hyperparameter-at-a-time search finds each dimension's
@@ -624,7 +624,7 @@ the interaction-blindness concern was not merely theoretical here.
 forward.** Current configuration: `clip_eps=0.55`, `gae_lambda=0.90`,
 `entropy_coef=0.0`, otherwise identical to `ppo_fixed_d_standard.yaml`.
 
-### Cross-sweep: value_coef x max_grad_norm
+### Cross-sweep 2/3: value_coef x max_grad_norm
 
 Same design as phase 1's H7 x H1 cross-sweep, checking whether H1's null
 result (README, H1: 0.375-0.377 across `value_coef ∈ [0.0, 1.0]`, all
@@ -681,7 +681,7 @@ going forward.** Current configuration: `clip_eps=0.55`, `gae_lambda=0.90`,
 `weighted_success_rate` (0.415) is now 87.9% of `π_D*`'s weighted ceiling
 (0.4725), up from 79.7% after the sequential pass alone.
 
-### Cross-sweep: clip_eps x gae_lambda x entropy_coef
+### Cross-sweep 3/3: clip_eps x gae_lambda x entropy_coef
 
 `gae_lambda` reappearing here raised the same concern that motivated the
 first cross-sweep in the first place: `entropy_coef` (H5) was found with
