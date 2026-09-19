@@ -581,7 +581,7 @@ setup for the `value_coef × max_grad_norm` cross-sweep next: a null
 result in isolation is precisely what that cross-sweep exists to
 double-check, not a coincidence to move past.
 
-### Cross-sweep 1/3: clip_eps x gae_lambda
+### Cross-sweep: clip_eps x gae_lambda
 
 Motivated by a direct methodological concern raised mid-project: H3-H1's
 sequential, one-hyperparameter-at-a-time search finds each dimension's
@@ -623,6 +623,89 @@ the interaction-blindness concern was not merely theoretical here.
 **`clip_eps=0.55, gae_lambda=0.90` replaces the sequential choice going
 forward.** Current configuration: `clip_eps=0.55`, `gae_lambda=0.90`,
 `entropy_coef=0.0`, otherwise identical to `ppo_fixed_d_standard.yaml`.
+
+### Cross-sweep: value_coef x max_grad_norm
+
+Same design as phase 1's H7 x H1 cross-sweep, checking whether H1's null
+result (README, H1: 0.375-0.377 across `value_coef ∈ [0.0, 1.0]`, all
+`max_grad_norm=0.5`) was `max_grad_norm` clipping the gradient before
+`value_coef`'s weight could matter, masking a real effect. Grid:
+`value_coef ∈ {0.0, 0.5, 1.0}` x `max_grad_norm ∈ {0.05, 0.1, 0.5, 1.0,
+2.0, 5.0}` (widened well past phase 1's `{0.1, 0.5, 1.0}` on both sides,
+since `max_grad_norm` had never been individually swept in phase 2 at
+all), `clip_eps=0.55`, `gae_lambda=0.90`, `entropy_coef=0.0` all fixed:
+
+<div align="center">
+
+| `value_coef` ＼ `max_grad_norm` | 0.05 | 0.10 | 0.50 | 1.00 | 2.00 | 5.00 |
+|---|---|---|---|---|---|---|
+| 0.0 | 0.359 | 0.359 | 0.404 | 0.377 | 0.372 | 0.389 |
+| 0.5 | 0.389 | 0.400 | **0.410** (previous best) | 0.386 | 0.381 | 0.390 |
+| 1.0 | 0.414 | **0.415** | 0.395 | 0.391 | 0.375 | 0.390 |
+
+</div>
+
+The same interaction phase 1 found, reproduced here: at this project's
+own `max_grad_norm=0.5`, `value_coef` barely moves the number (0.404 to
+0.410 to 0.395 -- consistent with H1's null result). Only once the
+gradient is clipped hard (`max_grad_norm ≤ 0.1`) does `value_coef` matter
+at all, and there it matters a lot: 0.359 at `value_coef=0.0` vs. 0.415
+at `value_coef=1.0`. `0.05` and `0.1` give near-identical results
+(0.414 vs. 0.415, well inside noise of each other), so this looks like a
+real plateau, not another still-rising edge.
+
+<div align="center">
+<img src="results/phase2/analysis/cross_value_maxgrad/cross_value_maxgrad_val_1_0_maxgrad_0_1_success_return.svg" width="80%"><br><em>value_coef=1.0, max_grad_norm=0.1: covered/overall ease off somewhat after epoch ~225 (0.58->0.52, 0.49->0.45) while held-out stays flat-to-improving throughout (0.37->0.38) -- the opposite of the overfitting signature documented under H4, not a reason to distrust this run.</em>
+</div>
+
+The late-training softening in `covered`/`overall` here is worth naming
+explicitly, since it makes this run look less clean at a glance than
+`clip_eps=0.55, gae_lambda=0.90` alone (previous section) was.
+`held_out` does not degrade alongside them -- it holds steady through the
+same window and ends slightly above its own mid-training level -- which
+is the opposite of what an overfitting explanation would predict (README,
+H4: overfitting collapses `held_out` while `covered` stays put; here
+`covered` moves and `held_out` doesn't). It reads as ordinary
+fixed-D training noise rather than the mechanism this project has been
+tracking. Separately: none of the sweep scripts persist a checkpoint
+mid-run (`save_best_checkpoint_path` is only wired into
+`scripts/analyze_policy_agreement.py`), so once a final configuration is
+settled, retraining it through that script -- which tracks and keeps the
+single best-observed checkpoint rather than whatever epoch training
+happens to end on -- is how this kind of late-run softening gets handled
+in practice, not by re-picking hyperparameters over it.
+
+**`value_coef=1.0, max_grad_norm=0.1` replaces the previous defaults
+going forward.** Current configuration: `clip_eps=0.55`, `gae_lambda=0.90`,
+`entropy_coef=0.0`, `value_coef=1.0`, `max_grad_norm=0.1`. Mean
+`weighted_success_rate` (0.415) is now 87.9% of `π_D*`'s weighted ceiling
+(0.4725), up from 79.7% after the sequential pass alone.
+
+### Cross-sweep: clip_eps x gae_lambda x entropy_coef
+
+`gae_lambda` reappearing here raised the same concern that motivated the
+first cross-sweep in the first place: `entropy_coef` (H5) was found with
+`clip_eps=0.4` still fixed -- the sequential value, not the
+`clip_eps=0.55` the first cross-sweep later settled on. Re-running
+`entropy_coef x gae_lambda` alone, at `clip_eps=0.55` held fixed, would
+just move the same coordinate-search blind spot up one level instead of
+closing it: gae_lambda would once again be optimized conditional on a
+clip_eps value not itself re-checked at the same time. So this one
+includes `clip_eps` as a third swept dimension rather than a fixed
+input.
+
+A full grid across every value each of the three has ever been tested at
+would be 5x4x5 = 100 runs -- the first cross-sweep's own result is what
+keeps this tractable instead: it already located the joint optimum's
+neighborhood in `(clip_eps, gae_lambda)` and showed performance falling
+away in every direction from it (see the grid two sections up), so
+nothing is lost by searching only that neighborhood here rather than
+the full range each dimension was originally swept across. Grid:
+`clip_eps ∈ {0.5, 0.55, 0.6}` x `gae_lambda ∈ {0.85, 0.90, 0.95}` x
+`entropy_coef ∈ {0.0, 0.003, 0.01}` (H5's own sweep showed a steep,
+monotonic decline past `0.01`, so `0.03`/`0.1` are not worth re-including
+here) -- 27 combinations, `value_coef=1.0`, `max_grad_norm=0.1` fixed
+(this project's cross-sweep-2 answer).
 
 ## Project structure
 

@@ -1,0 +1,31 @@
+# Cross-sweep 3: clip_eps x gae_lambda x entropy_coef. gae_lambda
+# reappearing here raised the same coordinate-search concern that
+# motivated the clip_eps x gae_lambda cross-sweep in the first place --
+# entropy_coef (H5) was found with clip_eps=0.4 (the sequential value)
+# still fixed, not clip_eps=0.55 (the cross-sweep answer). Rather than
+# re-run entropy_coef x gae_lambda alone at clip_eps=0.55 fixed --
+# which would just move the same blind spot up one level -- clip_eps
+# joins as a third swept dimension.
+#
+# Each dimension is restricted to its own already-known good
+# neighborhood (see README) rather than its full originally-tested
+# range, keeping this tractable: clip_eps/gae_lambda around the first
+# cross-sweep's joint optimum, entropy_coef around H5's monotonic
+# winner. value_coef=1.0, max_grad_norm=0.1 fixed (cross-sweep 2's
+# answer).
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: [0.5, 0.55, 0.6]
+gamma: 0.99
+gae_lambda: [0.85, 0.90, 0.95]
+entropy_coef: [0.0, 0.003, 0.01]
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
