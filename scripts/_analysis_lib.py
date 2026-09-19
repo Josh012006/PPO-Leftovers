@@ -258,6 +258,7 @@ def run_single_analysis(
     verbose: bool = True,
     log_prefix: str = "",
     save_best_checkpoint_path: Path | None = None,
+    save_all_checkpoints_dir: Path | None = None,
 ) -> dict:
     """Runs one fixed-D training + periodic-eval sweep for a single
     PPOHyperparams config. Saves `<prefix>.csv`, `<prefix>_success_return
@@ -288,12 +289,47 @@ def run_single_analysis(
     one, and no earlier script in this project persists a trained network
     at all (only the CSV/plots of its trajectory) -- this is the first
     place that gap is closed, needed by scripts/analyze_policy_agreement.py.
+
+    `save_all_checkpoints_dir`, if given, saves EVERY evaluated checkpoint
+    (epoch 0 -- theta == pi_beta -- through the final epoch, every
+    `checkpoint_every` epochs) to `<save_all_checkpoints_dir>/checkpoint_
+    epoch_<N>.pt`, each with the same metadata shape as
+    `save_best_checkpoint_path`'s file (state_dict, epoch,
+    weighted_success_rate, obs_dim, n_actions, hidden_sizes) plus that
+    checkpoint's own overall/covered/held_out breakdown. For a config
+    being locked in as final (not explored further), this means later
+    analysis -- disagreement at a specific epoch, a different checkpoint-
+    selection rule, plotting several epochs at once -- never requires
+    retraining, at the cost of one file per checkpoint on disk (a few
+    hundred KB each for this project's small 64x64 networks -- not
+    negligible over a long run at a short checkpoint_every, but not large
+    in absolute terms either).
     """
     trainer = FixedDPPOTrainer(
         dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg, prior_state_dict=prior_state_dict
     )
     rows: list[dict] = []
     best_tracker = {"weighted_success_rate": -1.0, "epoch": None, "state_dict": None}
+    if save_all_checkpoints_dir is not None:
+        save_all_checkpoints_dir.mkdir(parents=True, exist_ok=True)
+
+    def maybe_save_checkpoint(epoch: int, net, w: dict):
+        if save_all_checkpoints_dir is None:
+            return
+        torch.save(
+            {
+                "state_dict": copy.deepcopy(net.state_dict()),
+                "epoch": epoch,
+                "weighted_success_rate": w["weighted_success_rate"],
+                "success_rate_overall": w["overall"]["success_rate"],
+                "success_rate_covered": w["covered"]["success_rate"],
+                "success_rate_held_out": w["held_out"]["success_rate"],
+                "obs_dim": dataset.obs_dim,
+                "n_actions": dataset.n_actions,
+                "hidden_sizes": cfg.hidden_sizes,
+            },
+            save_all_checkpoints_dir / f"checkpoint_epoch_{epoch}.pt",
+        )
 
     def maybe_track_best(epoch: int, net, weighted_success_rate: float):
         if save_best_checkpoint_path is not None and weighted_success_rate > best_tracker["weighted_success_rate"]:
@@ -327,6 +363,7 @@ def run_single_analysis(
     entropy0 = trainer.compute_mean_entropy_over_dataset()
     rows.append(to_row(0, w0, clip_frac=0.0, entropy=entropy0))  # theta == pi_old exactly here: nothing clipped
     maybe_track_best(0, trainer.net, w0["weighted_success_rate"])
+    maybe_save_checkpoint(0, trainer.net, w0)
     if verbose:
         print(
             f"{log_prefix}[epoch    0] weighted_sr={w0['weighted_success_rate']:.3f} "
@@ -338,6 +375,7 @@ def run_single_analysis(
         w = live_eval(net)
         rows.append(to_row(epoch, w, clip_frac=summary["clip_frac"], entropy=summary["entropy"]))
         maybe_track_best(epoch, net, w["weighted_success_rate"])
+        maybe_save_checkpoint(epoch, net, w)
         if verbose:
             print(
                 f"{log_prefix}[epoch {epoch:4d}] weighted_sr={w['weighted_success_rate']:.3f} "
@@ -391,6 +429,9 @@ def run_single_analysis(
                 f"{log_prefix}Saved best-observed checkpoint (epoch {best_tracker['epoch']}, "
                 f"weighted_success_rate={best_tracker['weighted_success_rate']:.3f}) to {save_best_checkpoint_path}"
             )
+
+    if save_all_checkpoints_dir is not None and verbose:
+        print(f"{log_prefix}Saved {len(rows)} checkpoints (every {checkpoint_every} epochs, epoch 0 included) to {save_all_checkpoints_dir}")
 
     return {
         "prefix": prefix,

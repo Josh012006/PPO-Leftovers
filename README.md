@@ -707,6 +707,63 @@ monotonic decline past `0.01`, so `0.03`/`0.1` are not worth re-including
 here) -- 27 combinations, `value_coef=1.0`, `max_grad_norm=0.1` fixed
 (this project's cross-sweep-2 answer).
 
+<div align="center">
+
+| `clip_eps` | `gae_lambda` | `entropy_coef` | mean |
+|---|---|---|---|
+| 0.55 | 0.90 | **0.000** | **0.4152** |
+| 0.50 | 0.90 | 0.010 | 0.4116 |
+| 0.55 | 0.90 | 0.003 | 0.4085 |
+| 0.55 | 0.95 | 0.000 | 0.3923 |
+
+</div>
+
+Decisive, and reassuring rather than surprising: the exact point already
+in hand (`clip_eps=0.55, gae_lambda=0.90, entropy_coef=0.0`) tops the
+full 27-combination grid. `entropy_coef=0.0` was NOT conditional on the
+stale `clip_eps=0.4` after all -- letting all three vary jointly changed
+nothing. The concern that motivated this cross-sweep was legitimate
+methodology (a real risk, not a hypothetical one -- cross-sweep 1 had
+already shown the sequential search failing exactly this way once), it
+simply didn't fire again here.
+
+**No change to the current configuration.** All three planned
+cross-sweeps are now complete:
+
+<div align="center">
+
+| | value |
+|---|---|
+| `clip_eps` | 0.55 |
+| `gae_lambda` | 0.90 |
+| `entropy_coef` | 0.0 |
+| `value_coef` | 1.0 |
+| `max_grad_norm` | 0.1 |
+| mean `weighted_success_rate` | 0.415 (87.9% of `π_D*`'s weighted ceiling, 0.4725) |
+
+</div>
+
+## Next steps
+
+Hyperparameter search is done -- three individual sweeps that mattered
+(H2, H3, H5; H1 and H4 were null/diagnostic) and three cross-sweeps
+checking the interactions between them, converging on one stable answer
+nothing else in the tested space beats. What's left is the question this
+whole phase started from: how much of `J(π*) − J(π_alg)` does this tuned
+`π_alg` actually close, and where specifically does it still disagree
+with `π_D*`.
+
+`scripts/analyze_policy_agreement.py` is the tool for this -- it
+retrains the final configuration once (tracking the best-observed
+checkpoint via `weighted_success_rate`, not just whatever epoch training
+happens to stop on), then rolls out from every non-terminal state to
+find where the retrained policy's action disagrees with `π_D*` and
+whether that disagreement is ever "strict" (both `π_D*` definitions
+agree PPO is wrong, not just the empirical one -- see the script's own
+docstring). Every checkpoint, not just the best one, is saved this run
+(`--save-all-checkpoints`) so a later question about a different epoch
+never requires retraining from scratch.
+
 ## Project structure
 
 ```

@@ -1,0 +1,20 @@
+# Final configuration, locked in after H1-H5 individually and three
+# cross-sweeps checking pairwise/triple-wise interactions between them
+# (see README, "Results analysis"). Nothing in the tested space beats
+# this combination.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0

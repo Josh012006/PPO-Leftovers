@@ -446,6 +446,15 @@ def main():
     )
 
     parser.add_argument(
+        "--save-all-checkpoints",
+        action="store_true",
+        help="Only used when retraining. Save EVERY evaluated checkpoint (not just the best-observed "
+        "one) to <out-dir>/all_checkpoints/checkpoint_epoch_<N>.pt, so a later analysis at a "
+        "different epoch or checkpoint-selection rule never requires retraining. Off by default -- "
+        "one file per checkpoint on disk.",
+    )
+
+    parser.add_argument(
         "--episodes-per-state",
         type=int,
         default=20,
@@ -605,6 +614,7 @@ def main():
         set_global_seed(cfg.seed)
 
         best_ckpt_path = out_dir / "best_config_checkpoint.pt"
+        all_checkpoints_dir = (out_dir / "all_checkpoints") if args.save_all_checkpoints else None
 
         ceiling_success_rates = compute_ceiling_success_rates(
             env,
@@ -625,7 +635,9 @@ def main():
         print(
             f"\nRetraining the best configuration ({args.best_config}) "
             f"for up to {cfg.epochs} epochs, tracking the best-observed "
-            f"checkpoint (not just the final one)...\n"
+            f"checkpoint (not just the final one)"
+            + (f", and saving every checkpoint to {all_checkpoints_dir}" if all_checkpoints_dir else "")
+            + "...\n"
         )
 
         retrain_summary = run_single_analysis(
@@ -644,6 +656,7 @@ def main():
             weights=eval_weights,
             title_suffix="best configuration retrain",
             verbose=True,
+            save_all_checkpoints_dir=all_checkpoints_dir,
             save_best_checkpoint_path=best_ckpt_path,
         )
 
@@ -662,7 +675,7 @@ def main():
 
     print(
         f"Using the checkpoint from epoch {best_ckpt['epoch']} "
-        f"(success_rate={best_ckpt['success_rate']:.3f}) "
+        f"(weighted_success_rate={best_ckpt['weighted_success_rate']:.3f}) "
         f"as 'the best configuration's policy' "
         f"for the rest of this analysis.\n"
     )
