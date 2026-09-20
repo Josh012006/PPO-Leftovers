@@ -743,26 +743,81 @@ cross-sweeps are now complete:
 
 </div>
 
+## Policy agreement: where does the tuned policy still disagree with π_D*?
+
+The final configuration was retrained once with every checkpoint saved
+(`--save-all-checkpoints`, every 5 epochs, epoch 0 through 300), then
+rolled out from every non-terminal state to compare against both `π_D*`
+definitions. Mean `weighted_success_rate` over the run (0.415) matches
+the cross-sweep exactly, confirming reproducibility; the best single
+checkpoint reaches 0.4655 at epoch 175 -- not the final epoch, another
+instance of the non-monotonicity documented throughout this project (see
+"Epoch-count ceiling analysis"), and exactly why `--save-all-checkpoints`
+matters: that epoch's weights are sitting on disk rather than requiring
+a fresh retrain to recover.
+
+<div align="center">
+<img src="results/phase2/analysis/best_config/policy_agreement_maze_map.png" width="75%"><br><em>Strict disagreement severity by cell (green = agrees with π_D* or no cost; red = large value loss). Concentrated in the upper-left region and near the goal, both areas D covers densely.</em>
+</div>
+
+Of 895 non-terminal states, 484 (54.1%) are covered by `D`. Raw argmax
+disagreement with `π_D*` (empirical) is large -- 467 states, 52.2% --
+but nearly all of it is noise: filtering to statistically significant
+disagreement drops this to 92 states (10.3%), and requiring BOTH `π_D*`
+definitions to agree PPO is genuinely wrong (`is_disagreement_strict`)
+drops it further to 66 states (7.4%). **Every one of those 66 is a
+covered state -- zero are in the uncovered set.** This is the expected
+shape, not a surprise: an uncovered state is exactly where `π_D*` itself
+has no real information (its own tie-break there is as uninformed as
+anything PPO could produce), so "disagreement" isn't a meaningful
+category there to begin with.
+
+### What predicts disagreement severity, among the 66
+
+<div align="center">
+<img src="results/phase2/analysis/disagreement_factors/disagreement_factors_bars.png" width="80%"><br><em>Raw vs. partial (net of coverage) correlation with severity, across every tested factor.</em>
+</div>
+
+By far the strongest predictor, once overall coverage is controlled for,
+is `log_pair_min_samples` -- the SMALLER of the two competing actions'
+sample counts, whichever one that is (partial r = -0.44, vs. -0.18 raw).
+`action_sample_gap` -- the signed difference, `best-config action's
+samples − π_D*'s action's samples` -- barely correlates at all (partial
+r = -0.05).
+
+The nuance worth being precise about: this is not "PPO disagrees where
+π_D*'s action was sampled less than PPO's own." Two states with the
+exact same *positive* sample gap (PPO's action seen more than π_D*'s) can
+land on opposite sides of the severity distribution depending only on
+the smaller count -- gap +47 with counts (3, 50) behaves like a
+high-severity state, gap +50 with counts (500, 550) does not, even
+though both favor PPO's action by a similar or larger margin. A state
+with the *opposite*-signed gap (counts (40, 4), π_D*'s action seen far
+more) is just as much at risk as the first, because its minimum (4) is
+just as low. Direction of the imbalance doesn't predict severity; the
+absolute rarity of whichever action is the sparser one does. With too
+few samples for either action, the value estimate each side is built
+on -- π_D*'s empirical MDP as much as PPO's own critic -- is dominated
+by noise rather than signal, and which action ends up looking better is
+no longer reliably tracking which one actually is. `log_n_best_config_
+action` (PPO's own chosen action's raw sparsity, not compared to π_D*'s)
+shows the same pattern on its own (partial r = -0.30): PPO tends to be
+confidently wrong specifically where its own preferred action had little
+direct reinforcement, independent of how that compares to the
+alternative. `distance to goal` has a modest positive effect (partial r
+= +0.16); `hazard distance`, `local connectivity`, and `π_β`'s own
+action-probability gap show essentially none.
+
 ## Next steps
 
-Hyperparameter search is done -- three individual sweeps that mattered
-(H2, H3, H5; H1 and H4 were null/diagnostic) and three cross-sweeps
-checking the interactions between them, converging on one stable answer
-nothing else in the tested space beats. What's left is the question this
-whole phase started from: how much of `J(π*) − J(π_alg)` does this tuned
-`π_alg` actually close, and where specifically does it still disagree
-with `π_D*`.
-
-`scripts/analyze_policy_agreement.py` is the tool for this -- it
-retrains the final configuration once (tracking the best-observed
-checkpoint via `weighted_success_rate`, not just whatever epoch training
-happens to stop on), then rolls out from every non-terminal state to
-find where the retrained policy's action disagrees with `π_D*` and
-whether that disagreement is ever "strict" (both `π_D*` definitions
-agree PPO is wrong, not just the empirical one -- see the script's own
-docstring). Every checkpoint, not just the best one, is saved this run
-(`--save-all-checkpoints`) so a later question about a different epoch
-never requires retraining from scratch.
+A cheap, direct follow-up on the nuance above: among the low-`pair_min_
+samples` disagreement states, does PPO's chosen action skew toward
+whichever of the two had even slightly more samples (a residual
+directional bias surviving inside the noise), or is the direction
+genuinely unpredictable from sample counts alone? This only needs a
+sign comparison already available in `policy_agreement.csv`
+(`n_best_config_action` vs. `n_pi_d_star_action`, restricted to low-
+`pair_min_samples` rows) -- no retraining, no new rollouts.
 
 ## Project structure
 
