@@ -153,13 +153,13 @@ def residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--env-config", default="configs/env_maze.yaml")
-    parser.add_argument("--dataset", default="results/dataset_D.pkl")
-    parser.add_argument("--prior-checkpoint", default="results/prior_checkpoint.pt")
+    parser.add_argument("--env-config", default="configs/phase2/env_maze.yaml")
+    parser.add_argument("--dataset", default="results/phase2/dataset_D.pkl")
+    parser.add_argument("--prior-checkpoint", default="results/phase2/prior_checkpoint.pt")
     parser.add_argument(
-        "--policy-agreement-csv", default="results/analysis/policy_agreement/policy_agreement.csv"
+        "--policy-agreement-csv", default="results/phase2/analysis/best_config/policy_agreement.csv"
     )
-    parser.add_argument("--out-dir", default="results/analysis/disagreement_factors")
+    parser.add_argument("--out-dir", default="results/phase2/analysis/disagreement_factors")
     parser.add_argument(
         "--severity-column",
         default="severity_strict",
