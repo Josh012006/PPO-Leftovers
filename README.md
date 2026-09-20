@@ -567,8 +567,7 @@ to 0.293 (λ=0.5) to 0.318 (λ=0.90) to **0.377 (λ=0.95)**, then falls to
 confirms the existing setting rather than improving on it (its numbers
 match H5's own `entropy_coef=0.0` row exactly, since that row already
 was `clip_eps=0.4, entropy_coef=0.0, gae_lambda=0.95`). **`gae_lambda=0.95`
-stays.** Current best mean `weighted_success_rate` (0.377) is now
-79.7% of `π_D*`'s own weighted ceiling (0.4725).
+stays.** Current best mean `weighted_success_rate`: 0.377.
 
 ### H1: value coefficient
 
@@ -678,8 +677,8 @@ in practice, not by re-picking hyperparameters over it.
 **`value_coef=1.0, max_grad_norm=0.1` replaces the previous defaults
 going forward.** Current configuration: `clip_eps=0.55`, `gae_lambda=0.90`,
 `entropy_coef=0.0`, `value_coef=1.0`, `max_grad_norm=0.1`. Mean
-`weighted_success_rate` (0.415) is now 87.9% of `π_D*`'s weighted ceiling
-(0.4725), up from 79.7% after the sequential pass alone.
+`weighted_success_rate`: 0.415, up from 0.377 after the sequential pass
+alone.
 
 ### Cross-sweep 3/3: clip_eps x gae_lambda x entropy_coef
 
@@ -739,7 +738,7 @@ cross-sweeps are now complete:
 | `entropy_coef` | 0.0 |
 | `value_coef` | 1.0 |
 | `max_grad_norm` | 0.1 |
-| mean `weighted_success_rate` | 0.415 (87.9% of `π_D*`'s weighted ceiling, 0.4725) |
+| mean `weighted_success_rate` | 0.415 |
 
 </div>
 
