@@ -1129,8 +1129,6 @@ $$
 with `w(n) = (1 − βⁿ)/(1 − β)`. `β` joins the project's existing
 hyperparameters as something to sweep, not a fixed constant.
 
-#### How well does it scale
-
 
 ## Project structure
 
