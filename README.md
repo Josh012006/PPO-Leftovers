@@ -858,6 +858,41 @@ alternative. `distance to goal` has a modest positive effect (partial r
 = +0.11); `hazard distance`, `local connectivity`, and `π_β`'s own
 action-probability gap show essentially none.
 
+#### Does PPO at least skew toward the more-sampled action?
+
+A direct, cheap follow-up on the nuance above, using
+`policy_agreement.csv`'s own `n_best_config_action` vs.
+`n_pi_d_star_action` columns -- no retraining, no new rollouts. Among
+the 71 strict-disagreement states, PPO picks the more-sampled of the two
+competing actions 60.9% of the time (42/69, ties excluded) -- not
+significant (binomial test vs. 50/50, p=0.091). Restricted to the
+states where the imbalance should matter most, the ones with the lowest
+`pair_min_samples`, the skew gets weaker, not stronger: 54.3% (19/35,
+p=0.736) -- close to a coin flip.
+
+That the effect fades exactly where the earlier factor analysis says
+noise dominates most is itself informative: it rules out a residual
+"popularity bias" hiding inside the low-sample regime (PPO simply
+favoring whichever action happened to have marginally more
+reinforcement, even when both are rare) as an alternative to the noise
+account. The finding stays narrow, and is worth stating precisely rather
+than in either stronger or weaker form: a large sampling imbalance
+between the two competing actions predicts that PPO's preference between
+them becomes unreliable -- but not which direction that unreliable
+preference lands in. Direction is not recoverable from the sample counts
+at all; only the fact that the comparison has become untrustworthy is.
+
+#### A quick test to make sure agreement equals real better performance
+Now that we know possibly where the best checkpoint fails and before trying to 
+solve that in regard to the factor concerned, a useful check is to see if agreeing 
+with the references systematically improves the best checkpoints performance. For that 
+I designed a simple masked evaluation script. The script evaluates the best checkpoint on 
+the same evaluation seed. The difference is that I apply a mask where there is disagreement with 
+`π_D*` and instead of the checkpoint's action, I use `π_D*`'s suggested action. A better success 
+rate on the components would be a good sign to try and close the disagreement gap between PPO 
+and the references.
+
+
 ## Project structure
 
 ```
