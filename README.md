@@ -893,6 +893,34 @@ the same evaluation seed. The difference is that I apply a mask where there is d
 rate on the components would be a good sign to try and close the disagreement gap between PPO 
 and the references.
 
+<div align="center">
+<img src="results/phase2/analysis/best_config_reeval_999/patched_disagreement_states_comparison.png" width="80%"><br><em>Unpatched best checkpoint vs. the same checkpoint with π_D*'s action substituted at exactly the 71 strict-disagreement states (41 of which were actually visited under this seed/episode count).</em>
+</div>
+
+<div align="center">
+
+| | overall | covered | held-out | weighted |
+|---|---|---|---|---|
+| unpatched (best checkpoint) | 53.4% | 60.6% | 37.4% | 47.2% |
+| patched (71 states → `π_D*`) | 68.8% | 75.0% | 54.0% | 63.0% |
+| delta | +15.4 | +14.4 | +16.6 | +15.7 |
+
+</div>
+
+Clear, substantial gains across every population, from patching a tiny
+fraction of the state space (71 of 895 states, most never even visited
+under this start distribution). This validates the disagreement metric
+directly: it isn't flagging noise, it's flagging real, exploitable
+mistakes. The `covered` result is the most telling one to compare
+against the ceilings, since that's the population `π_D*` actually has
+information about -- patched `covered` (75.0%) lands almost exactly on
+`π_D*` (true-restricted)'s own ceiling (75.2%, a 0.2-point gap) and
+slightly above `π_D*` (empirical)'s (73.0%). In other words: fixing
+these 71 states alone closes essentially the entire remaining `covered`
+gap this project has been tracking since "Best checkpoint, re-evaluated
+under the seed 999" -- there is very little room left to close beyond
+what disagreement already identifies, on the population where closing it
+means what it's supposed to mean.
 
 ## Project structure
 
