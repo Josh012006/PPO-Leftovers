@@ -818,15 +818,16 @@ Of 895 non-terminal states, 484 (54.1%) are covered by `D`. Raw argmax
 disagreement with `π_D*` (empirical) is large -- 471 states, 52.6% --
 but nearly all of it is noise: filtering to statistically significant
 disagreement drops this to 97 states (10.8%), and requiring BOTH `π_D*`
-definitions to agree PPO is genuinely wrong (`is_disagreement_strict`)
-drops it further to 71 states (7.9%). **Every one of those 71 is a
+definitions to agree on the SAME action, with the checkpoint choosing a
+different one and performing worse than both (`is_disagreement_strict`)
+drops it further to 66 states (7.4%). **Every one of those 66 is a
 covered state -- zero are in the uncovered set.** This is the expected
 shape, not a surprise: an uncovered state is exactly where `π_D*` itself
 has no real information (its own tie-break there is as uninformed as
 anything PPO could produce), so "disagreement" isn't a meaningful
 category there to begin with.
 
-#### What predicts disagreement severity, among the 71
+#### What predicts disagreement severity, among the 66
 
 <div align="center">
 <img src="results/phase2/analysis/disagreement_factors_999/disagreement_factors_bars.png" width="80%"><br><em>Raw vs. partial (net of coverage) correlation with severity, across every tested factor.</em>
@@ -834,10 +835,12 @@ category there to begin with.
 
 By far the strongest predictor, once overall coverage is controlled for,
 is `log_pair_min_samples` -- the SMALLER of the two competing actions'
-sample counts, whichever one that is (partial r = -0.42, vs. -0.17 raw).
+sample counts, whichever one that is (partial r = -0.35, vs. -0.14 raw).
 `action_sample_gap` -- the signed difference, `best-config action's
-samples − π_D*'s action's samples` -- barely correlates at all (partial
-r = -0.03).
+samples − π_D*'s action's samples` -- correlates more modestly (partial
+r = -0.12); most of that is inherited from its overlap with `log_n_best_
+config_action` below rather than an independent directional signal (see
+next section).
 
 The nuance worth being precise about: this is not "PPO disagrees where
 π_D*'s action was sampled less than PPO's own." Two states with the
@@ -855,11 +858,11 @@ on -- π_D*'s empirical MDP as much as PPO's own critic -- is dominated
 by noise rather than signal, and which action ends up looking better is
 no longer reliably tracking which one actually is. `log_n_best_config_
 action` (PPO's own chosen action's raw sparsity, not compared to π_D*'s)
-shows the same pattern on its own (partial r = -0.29): PPO tends to be
+shows the same pattern on its own (partial r = -0.30): PPO tends to be
 confidently wrong specifically where its own preferred action had little
 direct reinforcement, independent of how that compares to the
 alternative. `distance to goal` has a modest positive effect (partial r
-= +0.11); `hazard distance`, `local connectivity`, and `π_β`'s own
+= +0.12); `hazard distance`, `local connectivity`, and `π_β`'s own
 action-probability gap show essentially none.
 
 #### Does PPO at least skew toward the more-sampled action?
@@ -867,12 +870,12 @@ action-probability gap show essentially none.
 A direct, cheap follow-up on the nuance above, using
 `policy_agreement.csv`'s own `n_best_config_action` vs.
 `n_pi_d_star_action` columns -- no retraining, no new rollouts. Among
-the 71 strict-disagreement states, PPO picks the more-sampled of the two
-competing actions 60.9% of the time (42/69, ties excluded) -- not
-significant (binomial test vs. 50/50, p=0.091). Restricted to the
+the 66 strict-disagreement states, PPO picks the more-sampled of the two
+competing actions 57.8% of the time (37/64, ties excluded) -- not
+significant (binomial test vs. 50/50, p=0.260). Restricted to the
 states where the imbalance should matter most, the ones with the lowest
-`pair_min_samples`, the skew gets weaker, not stronger: 54.3% (19/35,
-p=0.736) -- close to a coin flip.
+`pair_min_samples`, the skew doesn't just weaken, it reverses: 46.9%
+(15/32, p=0.860) -- indistinguishable from a coin flip.
 
 That the effect fades exactly where the earlier factor analysis says
 noise dominates most is itself informative: it rules out a residual
@@ -898,7 +901,7 @@ rate on the components would be a good sign to try and close the disagreement ga
 and the references.
 
 <div align="center">
-<img src="results/phase2/analysis/best_config_reeval_999/patched_disagreement_states_comparison.png" width="80%"><br><em>Unpatched best checkpoint vs. the same checkpoint with π_D*'s action substituted at exactly the 71 strict-disagreement states (41 of which were actually visited under this seed/episode count).</em>
+<img src="results/phase2/analysis/best_config_reeval_999/patched_disagreement_states_comparison.png" width="80%"><br><em>Unpatched best checkpoint vs. the same checkpoint with π_D*'s action substituted at exactly the 66 strict-disagreement states (38 of which were actually visited under this seed/episode count).</em>
 </div>
 
 <div align="center">
@@ -906,25 +909,29 @@ and the references.
 | | overall | covered | held-out | weighted |
 |---|---|---|---|---|
 | unpatched (best checkpoint) | 53.4% | 60.6% | 37.4% | 47.2% |
-| patched (71 states → `π_D*`) | 68.8% | 75.0% | 54.0% | 63.0% |
-| delta | +15.4 | +14.4 | +16.6 | +15.7 |
+| patched (66 states → `π_D*`) | 68.4% | 74.6% | 53.2% | 62.4% |
+| delta | +15.0 | +14.0 | +15.8 | +15.2 |
 
 </div>
 
 Clear, substantial gains across every population, from patching a tiny
-fraction of the state space (71 of 895 states, most never even visited
+fraction of the state space (66 of 895 states, most never even visited
 under this start distribution). This validates the disagreement metric
 directly: it isn't flagging noise, it's flagging real, exploitable
 mistakes. The `covered` result is the most telling one to compare
 against the ceilings, since that's the population `π_D*` actually has
-information about -- patched `covered` (75.0%) lands almost exactly on
-`π_D*` (true-restricted)'s own ceiling (75.2%, a 0.2-point gap) and
+information about -- patched `covered` (74.6%) lands almost exactly on
+`π_D*` (true-restricted)'s own ceiling (75.2%, a 0.6-point gap) and
 slightly above `π_D*` (empirical)'s (73.0%). In other words: fixing
-these 71 states alone closes essentially the entire remaining `covered`
+these 66 states alone closes essentially the entire remaining `covered`
 gap this project has been tracking since "Best checkpoint, re-evaluated
 under the seed 999" -- there is very little room left to close beyond
 what disagreement already identifies, on the population where closing it
 means what it's supposed to mean.
+
+### An attempt to close the gap
+
+
 
 ## Project structure
 
