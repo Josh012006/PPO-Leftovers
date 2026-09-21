@@ -794,7 +794,7 @@ using what `D` provides, we are at a risk of overfitting. And that's not the goa
 study of the question that we make sure it's not happening.
 
 
-## What other improvements we can make
+## What other improvements can we make ?
 
 ### Policy agreement and disagreement factors
 
@@ -929,9 +929,181 @@ under the seed 999" -- there is very little room left to close beyond
 what disagreement already identifies, on the population where closing it
 means what it's supposed to mean.
 
-### An attempt to close the gap
+## An attempt to close the gap
 
+The `covered` gap patching already validated (previous section) is real
+and worth trying to close directly, not just detect. A concrete example,
+already introduced when tracing the mechanism state by state, anchors
+both ideas below: state 717.
 
+State 717 has two live actions (the other two are walls, `Q=-50` under
+both references). `π_D*` (empirical) and `π_D*` (true-restricted)
+independently agree action 1 is best (`Q=0.553` / `0.529`) over PPO's
+choice, action 3 (`Q=0.483` / `0.426`). Neither is a sparse-sample
+artifact of the kind seen elsewhere in this project (README, "Policy
+agreement"): both actions have a stable, well-established true
+transition -- action 1 reaches state 747 (`V*=0.66`, the best
+successor available) 92.5% of the time, action 3 reaches state 718
+(`V*=0.52`, clearly worse) 92.5% of the time. Action 1 really is better.
+
+What `D` actually contains at this state: action 3 appears 13 times
+(realized GAE advantage, computed from `π_β`'s own critic, mean
+-0.663, std 0.146), action 1 only twice (mean -0.772, std 0.180) -- LOWER
+than action 3's, the opposite of what the true Q-values say. Two things
+compound to produce this reversal:
+
+- **GAE reflects the whole realized trajectory, not just the immediate
+  transition.** With only 2 samples, there is no way to average out
+  whatever happened downstream, under `π_β`'s own still-imperfect
+  behavior, after reaching state 747 in those particular two episodes --
+  unlike `π_D*`'s Q-value, which bootstraps through 747's own
+  already-converged value, immune to any single trajectory's noise.
+- **`π_β`'s own critic is itself substantially miscalibrated here**:
+  it predicts `V(717) = -0.42`, against a true value of `+0.53` to
+  `+0.55` -- a ~0.95-0.97 gap, consistent with `π_β` rarely exploiting
+  this region well during its own training. Since advantages in this
+  project's fixed-D trainer are computed ONCE, from this exact static
+  critic, and never refreshed across the whole 300-epoch window (see
+  `src/ppo_exploitation/ppo/fixed_d_trainer.py`), this miscalibration is
+  locked in for the entire run, not just the first few epochs.
+
+Where the actual training mechanism turns this into a wrong policy: the
+fixed-D loss averages over individual *transitions*, not over unique
+(state, action) *pairs* -- so action 3's 13 occurrences contribute 13
+gradient pushes for every 2 that action 1 gets, every single epoch, for
+300 epochs. Whichever action has more data dominates the cumulative
+gradient regardless of which one's average is more reliable.
+
+### First idea: updating the advantage estimation with the improved critic (set aside for now)
+
+The idea: since `value_coef` trains the critic throughout the 300-epoch
+window, and the critic demonstrably starts out wrong at states like 717,
+periodically recomputing GAE with the *current* critic (not just `π_β`'s
+frozen one) could let the advantage estimates self-correct as the critic
+improves -- directly targeting the second failure mode identified above.
+
+**Why standard PPO doesn't do this, mathematically.** In ordinary
+(online) PPO, a training window lasts a handful of epochs (typically
+3-10) on a freshly collected batch, and refreshing the critic only
+happens BETWEEN windows, on a new rollout. Over so few epochs, the
+critic simply doesn't have time to drift meaningfully -- refreshing the
+advantage mid-window would change almost nothing there, so it isn't that
+the idea was tried and rejected, it's that the problem it would solve
+barely exists at that scale. It is specifically this project's choice to
+stretch one window to 300 epochs on fixed data (to study extraction to
+its limit) that manufactures the critic-staleness problem in the first
+place -- something already visible indirectly in the epoch-driven
+collapses documented under H3/H4.
+
+**Where it could fail.** PPO's whole mechanism depends on a precise
+consistency: the trust-region ratio always compares `θ_current` against
+`θ_old` (= `π_β`, never refreshed), and the advantage is supposed to
+measure quality relative to that SAME reference point. Refreshing the
+critic (and therefore the advantage) without also refreshing `θ_old`
+breaks that consistency: the trust region keeps protecting relative to
+`π_β`, while the advantage now reflects a more recent critic's opinion --
+a mismatch between what the trust region is guarding and what the
+advantage is measuring, which could introduce a new instability, possibly
+worse than the one it's meant to fix. Testable, but it deserves a real,
+controlled experiment, not a small tweak -- set aside for now in favor of
+the second idea.
+
+### Second idea: weighting updates by effective sample confidence, not raw count
+
+**The problem with the current, linear weighting.** The fixed-D loss is
+a plain average over individual transitions in `D`, so a (state, action)
+pair seen `n` times contributes `n` gradient pushes toward whatever its
+average advantage says -- every occurrence counts equally, however
+little total evidence backs it up. This is precisely what state 717
+shows going wrong: action 3's 13 occurrences dominate action 1's 2 by a
+6.5x margin in raw pull, regardless of which average is actually built
+on enough evidence to trust.
+
+**A natural but naive fix: full normalization.** Give every unique
+(state, action) pair equal weight, regardless of `n` -- as already
+discussed, this doesn't clearly help at a state like 278 either: with
+only 1 sample, its lone realized advantage still gets treated as fully
+reliable, and a single unlucky (or lucky) draw would carry exactly as
+much weight as an average genuinely earned over hundreds of samples.
+Normalization corrects the volume imbalance but throws away the
+information *n* itself carries about how much to trust the average.
+
+**Another natural idea: weight by inverse variance (precision).** Since
+a sample mean's standard error shrinks as `1/√n`, precision-weighting
+(`n/σ²`) is the classical statistical answer to "how much should this
+estimate count" -- but it makes the imbalance WORSE, not better: weight
+grows roughly as `n²` instead of `n`. Concretely at state 717: going
+from `n=2` to `n=13` is already a 6.5x jump in raw pull; weighting by
+precision would push that to roughly `(13/2)² ≈ 42x` -- exactly the
+wrong direction when the 2-sample action is the one that's actually
+better.
+
+**What we actually want:** a weight that grows with `n` -- more data
+should count for more, an estimate from 1 sample shouldn't be treated as
+equal to one from hundreds -- but that SATURATES, so that beyond some
+point, more data stops buying proportionally more influence. Every
+observation is taken at its just value: neither the many-sample pair
+inflated far past what its evidence has already established, nor the
+few-sample pair discounted to nothing. This is the "effective number of
+samples" construction (Cui et al., 2019, originally for class imbalance
+in classification):
+
+$$
+w(n) = (1 − β^n) / (1 − β),   \text{ for a chosen } β < 1
+$$
+
+This has exactly the needed shape: for small `n`, `w(n) ≈ n` (close to
+today's behavior -- no rare pair gets artificially inflated to parity
+just for being rare); for large `n`, `w(n) → 1/(1−β)`, a fixed ceiling no
+amount of extra data can push past. It also cleanly contains both
+extremes already discussed as special cases: as `β → 1`, `w(n)/n → 1`
+for every `n` (exactly today's linear weighting is recovered); as
+`β → 0`, `w(n) → 1` for every `n ≥ 1` (full normalization). `β` becomes
+a single new, interpretable hyperparameter -- how aggressively to
+saturate -- to sweep between these two extremes.
+
+<div align="center">
+<img src="results/phase2/analysis/gap_closing_ideas/effective_sample_weighting.png" width="90%"><br><em>Left: the weighting function itself, linear (today) vs. effective-sample (two β choices). Right: state 717's two real actions, before and after -- the linear scheme gives action 3 a 6.5x pull over action 1; β=0.9 compresses that to 3.9x, β=0.7 to 1.9x.</em>
+</div>
+
+**The new policy-loss update.** Today's fixed-D clipped objective
+averages uniformly over transitions `i` in a minibatch:
+
+$$
+L(\theta) =
+-\frac{1}{N}
+\sum_{i=1}^{N}
+\min\left(
+r_i(\theta) A_i,\,
+\operatorname{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
+\right)
+$$
+
+The proposed change replaces each transition's uniform weight with
+$w(n_{s,a})/n_{s,a}$, where $n_{s,a}$ is that transition's (state,
+action) pair's total count in `D` -- so the pair's $n_{s,a}$
+occurrences, which currently sum to a total pull of $n_{s,a}$, sum to
+$w(n_{s,a})$ instead:
+
+$$
+L(\theta)=
+-\frac{1}{Z}
+\sum_{i=1}^{N}
+\frac{w(n_{s_i,a_i})}{n_{s_i,a_i}}
+\min\left(
+r_i(\theta) A_i,\,
+\operatorname{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
+\right)
+$$
+
+$$
+Z=
+\sum_{i=1}^{N}
+\frac{w(n_{s_i,a_i})}{n_{s_i,a_i}}
+$$
+
+with `w(n) = (1 − βⁿ)/(1 − β)`. `β` joins the project's existing
+hyperparameters as something to sweep, not a fixed constant.
 
 ## Project structure
 
