@@ -802,7 +802,61 @@ Now the best checkpoint is still **12.4 points behind `π_D*` (empirical)** and 
 (true-restricted)**. The natural next step is to see where it disagrees with the references and performs worse. It will 
 help us identify where and possibly how improvement can happen.
 
+The best checkpoint (epoch 180) was rolled out from every non-terminal
+state to compare against both `π_D*` definitions, under the same
+`eval_seed=999`.
 
+<div align="center">
+<img src="results/phase2/analysis/best_config_reeval_999/policy_agreement_maze_map.png" width="75%"><br><em>Strict disagreement severity by cell (green = agrees with π_D* or no cost; red = large value loss). Concentrated in the upper-left region and near the goal, both areas D covers densely.</em>
+</div>
+
+Of 895 non-terminal states, 484 (54.1%) are covered by `D`. Raw argmax
+disagreement with `π_D*` (empirical) is large -- 471 states, 52.6% --
+but nearly all of it is noise: filtering to statistically significant
+disagreement drops this to 97 states (10.8%), and requiring BOTH `π_D*`
+definitions to agree PPO is genuinely wrong (`is_disagreement_strict`)
+drops it further to 71 states (7.9%). **Every one of those 71 is a
+covered state -- zero are in the uncovered set.** This is the expected
+shape, not a surprise: an uncovered state is exactly where `π_D*` itself
+has no real information (its own tie-break there is as uninformed as
+anything PPO could produce), so "disagreement" isn't a meaningful
+category there to begin with.
+
+#### What predicts disagreement severity, among the 71
+
+<div align="center">
+<img src="results/phase2/analysis/disagreement_factors_999/disagreement_factors_bars.png" width="80%"><br><em>Raw vs. partial (net of coverage) correlation with severity, across every tested factor.</em>
+</div>
+
+By far the strongest predictor, once overall coverage is controlled for,
+is `log_pair_min_samples` -- the SMALLER of the two competing actions'
+sample counts, whichever one that is (partial r = -0.42, vs. -0.17 raw).
+`action_sample_gap` -- the signed difference, `best-config action's
+samples − π_D*'s action's samples` -- barely correlates at all (partial
+r = -0.03).
+
+The nuance worth being precise about: this is not "PPO disagrees where
+π_D*'s action was sampled less than PPO's own." Two states with the
+exact same *positive* sample gap (PPO's action seen more than π_D*'s) can
+land on opposite sides of the severity distribution depending only on
+the smaller count -- gap +47 with counts (3, 50) behaves like a
+high-severity state, gap +50 with counts (500, 550) does not, even
+though both favor PPO's action by a similar or larger margin. A state
+with the *opposite*-signed gap (counts (40, 4), π_D*'s action seen far
+more) is just as much at risk as the first, because its minimum (4) is
+just as low. Direction of the imbalance doesn't predict severity; the
+absolute rarity of whichever action is the sparser one does. With too
+few samples for either action, the value estimate each side is built
+on -- π_D*'s empirical MDP as much as PPO's own critic -- is dominated
+by noise rather than signal, and which action ends up looking better is
+no longer reliably tracking which one actually is. `log_n_best_config_
+action` (PPO's own chosen action's raw sparsity, not compared to π_D*'s)
+shows the same pattern on its own (partial r = -0.29): PPO tends to be
+confidently wrong specifically where its own preferred action had little
+direct reinforcement, independent of how that compares to the
+alternative. `distance to goal` has a modest positive effect (partial r
+= +0.11); `hazard distance`, `local connectivity`, and `π_β`'s own
+action-probability gap show essentially none.
 
 ## Project structure
 
