@@ -1052,19 +1052,43 @@ $$
 w(n) = (1 − β^n) / (1 − β),   \text{ for a chosen } β < 1
 $$
 
-This has exactly the needed shape: for small `n`, `w(n) ≈ n` (close to
-today's behavior -- no rare pair gets artificially inflated to parity
-just for being rare); for large `n`, `w(n) → 1/(1−β)`, a fixed ceiling no
-amount of extra data can push past. It also cleanly contains both
-extremes already discussed as special cases: as `β → 1`, `w(n)/n → 1`
-for every `n` (exactly today's linear weighting is recovered); as
-`β → 0`, `w(n) → 1` for every `n ≥ 1` (full normalization). `β` becomes
-a single new, interpretable hyperparameter -- how aggressively to
-saturate -- to sweep between these two extremes.
 
 <div align="center">
 <img src="results/phase2/analysis/gap_closing_ideas/effective_sample_weighting.png" width="90%"><br><em>Left: the weighting function itself, linear (today) vs. effective-sample (two β choices). Right: state 717's two real actions, before and after -- the linear scheme gives action 3 a 6.5x pull over action 1; β=0.9 compresses that to 3.9x, β=0.7 to 1.9x.</em>
 </div>
+
+<br/>
+
+This has exactly the needed shape. Write `β = 1 − ε`, so `ε` is small
+whenever `β` is close to 1. For `n` small relative to the saturation
+scale `1/ε = 1/(1−β)`, a first-order expansion gives `βⁿ ≈ 1 − nε`, so:
+ 
+$$
+w(n) = (1 − β^n)/(1 − β) \sim nε/ε = n
+$$
+ 
+-- close to today's linear behavior, so no rare pair gets artificially
+inflated to parity just for being rare. Once `n` grows past that same
+scale, `βⁿ → 0` and `w(n) → 1/(1−β)`: a fixed ceiling no amount of
+extra data can push past. `1/(1−β)` is therefore the one number that
+matters when picking `β` -- it IS the sample count past which more data
+stops buying proportionally more influence, not `β` itself read on its
+own (β=0.9 → the scale is 10; β=0.7 → the scale is only ~3.3, so even
+`n=2` is no longer "small" relative to it -- exactly why the figure
+above already shows visible compression at `n=2` for that curve, not
+just at `n=13`).
+ 
+This construction also cleanly contains both extremes already discussed
+as special cases, confirming it's the right generalization rather than
+an arbitrary compromise: as `β → 1`, the saturation scale `1/(1−β) → ∞`,
+so EVERY `n` is "small" relative to it and `w(n)/n → 1` throughout --
+exactly today's linear weighting. As `β → 0`, the scale shrinks to 1, so
+even `n=1` already saturates and `w(n) → 1` for every `n ≥ 1` -- full
+normalization. `β` is therefore a single, interpretable dial between
+these two extremes (equivalently, `1/(1−β)` is that dial expressed
+directly in units of "samples before saturating") -- a new
+hyperparameter to sweep, not a fixed constant.
+
 
 **The new policy-loss update.** Today's fixed-D clipped objective
 averages uniformly over transitions `i` in a minibatch:
@@ -1074,8 +1098,8 @@ L(\theta) =
 -\frac{1}{N}
 \sum_{i=1}^{N}
 \min\left(
-r_i(\theta) A_i,\,
-\textit{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
+r_i(\theta) A_i,
+\textit{clip}\left(r_i(\theta),1-\epsilon,1+\epsilon\right) A_i
 \right)
 $$
 
@@ -1091,8 +1115,8 @@ L(\theta)=
 \sum_{i=1}^{N}
 \frac{w(n_{s_i,a_i})}{n_{s_i,a_i}}
 \min\left(
-r_i(\theta) A_i,\,
-\textit{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
+r_i(\theta) A_i,
+\textit{clip}\left(r_i(\theta),1-\epsilon, 1+\epsilon\right) A_i
 \right)
 $$
 
