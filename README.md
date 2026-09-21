@@ -1075,7 +1075,7 @@ L(\theta) =
 \sum_{i=1}^{N}
 \min\left(
 r_i(\theta) A_i,\,
-\operatorname{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
+\textit{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
 \right)
 $$
 
@@ -1092,7 +1092,7 @@ L(\theta)=
 \frac{w(n_{s_i,a_i})}{n_{s_i,a_i}}
 \min\left(
 r_i(\theta) A_i,\,
-\operatorname{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
+\textit{clip}\left(r_i(\theta),\,1-\epsilon,\,1+\epsilon\right) A_i
 \right)
 $$
 
