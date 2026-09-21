@@ -13,19 +13,13 @@ BASELINE (weighting off) is added automatically by this script as one
 extra combination, not part of the YAML grid, so the same config never
 needs a redundant "off" variant hand-added to the beta list.
 
-Per-epoch UPDATE cost is measured in its own dedicated pass for every
-combination (baseline included): one FixedDPPOTrainer.train() call with
-NO eval_callback, timed end to end and divided by cfg.epochs -- this
-isolates the actual overhead the new weighting adds to a gradient step
-from live-rollout evaluation cost, which is timed and reported
-separately. Performance (mean/best/std/final weighted_success_rate)
-comes from a SEPARATE run through scripts/_analysis_lib.py:
-run_single_analysis, exactly as scripts/analyze_sweep.py reports it --
-training runs twice per combination as a result (once for clean timing,
-once for the standard eval curve), which this project's fast fixed-D
-training (no env.step() calls at all -- D is read-only, see
-fixed_d_trainer.py) makes cheap enough to be worth the clarity of not
-conflating the two measurements.
+Per-epoch UPDATE cost (`seconds_per_epoch`) comes directly from
+scripts/_analysis_lib.py:run_single_analysis's own return value, which
+isolates the training loop's wall time from its eval_callback's
+live-rollout time internally, within the SAME training pass -- no
+second, dedicated `trainer.train()` call needed just for timing, and no
+risk of the two measurements drifting apart from being taken in
+different runs.
 
 Parallel execution (--cpu-count) and resumability (--force) work
 identically to scripts/analyze_sweep.py -- same spawn-context
@@ -78,27 +72,17 @@ from _analysis_lib import compute_ceiling_success_rates, run_single_analysis
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.eval.evaluate import DEFAULT_EVAL_WEIGHTS, get_tier_start_lists
-from ppo_exploitation.ppo.fixed_d_trainer import FixedDPPOTrainer
 from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams, StartTierConfig
 from ppo_exploitation.utils.seeding import set_global_seed
 
 
-def time_pure_training(dataset, obs_dim, n_actions, cfg, prior_state_dict) -> float:
-    """Seconds per epoch of the training loop ALONE -- no evaluation, no
-    plotting, nothing but trainer.train(). A fresh trainer every call
-    (theta must start at pi_beta's weights either way, so this matches
-    exactly what a real run does)."""
-    set_global_seed(cfg.seed)
-    trainer = FixedDPPOTrainer(dataset, obs_dim=obs_dim, n_actions=n_actions, cfg=cfg, prior_state_dict=prior_state_dict)
-    t0 = time.time()
-    trainer.train(verbose=False, eval_every_epochs=None, eval_callback=None)
-    dt = time.time() - t0
-    return dt / cfg.epochs
-
-
 # --------------------------------------------------------------------------
-# Parallel worker machinery -- same shape as scripts/analyze_sweep.py's,
-# extended to also run the dedicated timing pass per combination.
+# Parallel worker machinery -- same shape as scripts/analyze_sweep.py's.
+# Per-epoch update cost (seconds_per_epoch) comes straight out of
+# run_single_analysis's own return value now -- it isolates training-loop
+# time from its eval_callback's live-rollout time internally (see
+# scripts/_analysis_lib.py), so no separate, dedicated timing pass (and
+# no second trainer.train() call) is needed here anymore.
 # --------------------------------------------------------------------------
 _WORKER: dict = {}
 
@@ -120,13 +104,8 @@ def _run_one_combo(task: dict) -> dict:
     base = {"beta": beta}
     try:
         cfg = PPOHyperparams(**task["combo"])
+        set_global_seed(cfg.seed)
         with open(log_path, "w", buffering=1) as logf, contextlib.redirect_stdout(logf):
-            print(f"Timing pure training (no eval) for {prefix}...")
-            seconds_per_epoch = time_pure_training(
-                _WORKER["dataset"], _WORKER["dataset"].obs_dim, _WORKER["dataset"].n_actions, cfg, _WORKER["prior_state_dict"]
-            )
-            print(f"  {seconds_per_epoch:.4f} s/epoch")
-            set_global_seed(cfg.seed)
             summary = run_single_analysis(
                 eval_env=_WORKER["env"],
                 dataset=_WORKER["dataset"],
@@ -145,7 +124,7 @@ def _run_one_combo(task: dict) -> dict:
                 verbose=True,
                 log_prefix=task["log_tag"],
             )
-        return {**base, "seconds_per_epoch": seconds_per_epoch, **summary, "status": "ran", "log_path": str(log_path)}
+        return {**base, **summary, "status": "ran", "log_path": str(log_path)}
     except Exception as e:
         with open(log_path, "a") as logf:
             logf.write(f"\n[ERROR] {e}\n{traceback.format_exc()}\n")
@@ -279,9 +258,6 @@ def main():
             cfg = PPOHyperparams(**combo)
             print(f"\n{log_tag}Starting -- {desc}")
             t0 = time.time()
-            print(f"{log_tag}Timing pure training (no eval)...")
-            seconds_per_epoch = time_pure_training(dataset, dataset.obs_dim, dataset.n_actions, cfg, prior_state_dict)
-            print(f"{log_tag}  {seconds_per_epoch:.4f} s/epoch")
             set_global_seed(cfg.seed)
             summary = run_single_analysis(
                 eval_env=eval_env, dataset=dataset, prior_state_dict=prior_state_dict,
@@ -291,10 +267,13 @@ def main():
                 weights=weights, title_suffix=desc, verbose=True, log_prefix=log_tag,
             )
             dt = time.time() - t0
-            print(f"{log_tag}Done in {dt / 60:.1f} min -- best={summary['best']:.3f} mean={summary['mean']:.3f} std={summary['std']:.3f}")
+            print(
+                f"{log_tag}Done in {dt / 60:.1f} min ({summary['seconds_per_epoch']:.4f} s/epoch update cost) -- "
+                f"best={summary['best']:.3f} mean={summary['mean']:.3f} std={summary['std']:.3f}"
+            )
             results.append(
                 {"beta": combo.get("effective_sample_beta") if combo.get("use_effective_sample_weighting") else None,
-                 "seconds_per_epoch": seconds_per_epoch, **summary, "status": "ran"}
+                 **summary, "status": "ran"}
             )
     else:
         cpu_count = max(1, args.cpu_count)

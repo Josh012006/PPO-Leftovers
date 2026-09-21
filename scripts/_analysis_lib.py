@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import copy
 import pickle
+import time
 from collections import Counter, deque
 from pathlib import Path
 
@@ -372,6 +373,7 @@ def run_single_analysis(
         )
 
     def eval_callback(epoch: int, net, summary: dict):
+        t_cb_start = time.time()
         w = live_eval(net)
         rows.append(to_row(epoch, w, clip_frac=summary["clip_frac"], entropy=summary["entropy"]))
         maybe_track_best(epoch, net, w["weighted_success_rate"])
@@ -383,8 +385,22 @@ def run_single_analysis(
                 f"held_out={w['held_out']['success_rate']:.3f}) entropy={summary['entropy']:.4f} "
                 f"clip_frac={summary['clip_frac']:.4f}"
             )
+        eval_time_accum["seconds"] += time.time() - t_cb_start
 
+    # Isolates the actual per-epoch UPDATE cost from this same, single
+    # training pass rather than requiring a second, dedicated training
+    # run purely for timing: total wall time inside trainer.train() minus
+    # every second spent inside eval_callback (the live rollouts above,
+    # not part of the gradient step itself) leaves just the training
+    # loop's own cost, divided by cfg.epochs. Cheap to track (a couple of
+    # time.time() calls per checkpoint, not per minibatch) and exact,
+    # not an estimate -- no separate pass needed to compare configs on
+    # update cost (see scripts/analyze_effective_sample_weighting.py).
+    eval_time_accum = {"seconds": 0.0}
+    t_train_start = time.time()
     trainer.train(verbose=False, eval_every_epochs=checkpoint_every, eval_callback=eval_callback)
+    training_only_seconds = (time.time() - t_train_start) - eval_time_accum["seconds"]
+    seconds_per_epoch = training_only_seconds / cfg.epochs
 
     out_dir.mkdir(parents=True, exist_ok=True)
     df = pd.DataFrame(rows)
@@ -442,4 +458,5 @@ def run_single_analysis(
         "final": float(df.iloc[-1]["weighted_success_rate"]),
         "csv_path": str(csv_path),
         "best_checkpoint_epoch": best_tracker["epoch"],
+        "seconds_per_epoch": seconds_per_epoch,
     }

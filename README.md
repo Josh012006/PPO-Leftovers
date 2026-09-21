@@ -772,7 +772,7 @@ time), there is no retraining needed.
 |---|---|---|---|---|
 | `π_β` (prior) | 40.0% | 46.2% | 19.4% | 31.3% |
 | **best checkpoint (epoch 180)** | **53.4%** | **60.6%** | **37.4%** | **47.2%** |
-| `π_D*` (empirical) | 56.2% | 73.0% | 31.6% | 47.3% |
+| `π_D*` (empirical) | 56.4% | 74.2% | 29.2% | 47.3% |
 | `π_D*` (true-restricted) | 59.6% | 75.2% | 39.4% | 53.4% |
 
 </div>
@@ -798,7 +798,7 @@ study of the question that we make sure it's not happening.
 
 ### Policy agreement and disagreement factors
 
-Now the best checkpoint is still **12.4 points behind `π_D*` (empirical)** and **14.6 points behind `π_D*`
+Now the best checkpoint is still **13.6 points behind `π_D*` (empirical)** and **14.6 points behind `π_D*`
 (true-restricted)**. The natural next step is to see where it disagrees with the references and performs worse. It will 
 help us identify where and possibly how improvement can happen. We define disagreement on an action to take at a particular state 
 as the combination of three conditions : 
@@ -922,7 +922,7 @@ mistakes. The `covered` result is the most telling one to compare
 against the ceilings, since that's the population `π_D*` actually has
 information about -- patched `covered` (74.6%) lands almost exactly on
 `π_D*` (true-restricted)'s own ceiling (75.2%, a 0.6-point gap) and
-slightly above `π_D*` (empirical)'s (73.0%). In other words: fixing
+just above `π_D*` (empirical)'s (74.2%, a 0.4-point gap). In other words: fixing
 these 66 states alone closes essentially the entire remaining `covered`
 gap this project has been tracking since "Best checkpoint, re-evaluated
 under the seed 999" -- there is very little room left to close beyond
