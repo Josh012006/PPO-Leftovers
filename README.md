@@ -883,6 +883,7 @@ preference lands in. Direction is not recoverable from the sample counts
 at all; only the fact that the comparison has become untrustworthy is.
 
 #### A quick test to make sure agreement equals real better performance
+
 Now that we know possibly where the best checkpoint fails and before trying to 
 solve that in regard to the factor concerned, a useful check is to see if agreeing 
 with the references systematically improves the best checkpoints performance. For that 

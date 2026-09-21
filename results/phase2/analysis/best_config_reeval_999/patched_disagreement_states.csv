@@ -1,0 +1,3 @@
+kind,success_rate_overall,success_rate_covered,success_rate_held_out,weighted_success_rate,distinct_patched_states_visited
+unpatched,0.534,0.606,0.374,0.47200000000000003,0
+patched,0.688,0.75,0.54,0.6295,41
