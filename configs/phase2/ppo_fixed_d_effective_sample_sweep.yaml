@@ -1,0 +1,34 @@
+# Effective-sample-count weighting sweep (see README, "An attempt to
+# close the gap"). Full PPOHyperparams config, exactly like every other
+# sweep in this project -- every field fixed at the current best
+# checkpoint's values (configs/phase2/ppo_fixed_d_best_config.yaml)
+# EXCEPT effective_sample_beta, the swept field. use_effective_sample_
+# weighting is fixed to true here; scripts/analyze_effective_sample_
+# weighting.py adds the standard-PPO baseline (weighting off) itself,
+# separately -- it is not part of this grid.
+#
+# beta values: one below 0.7 (0.5, aggressive saturation), one between
+# 0.7 and 0.85 (0.78), one between 0.85 and 0.9 (0.87), then denser
+# coverage from 0.9 to 0.99 (the region closest to today's linear
+# behavior, where the saturation scale 1/(1-beta) is large enough to
+# matter for this project's real sample counts -- state 717's 2-vs-13
+# split, or the many single-sample states elsewhere).
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_beta: [0.5, 0.7, 0.78, 0.85, 0.87, 0.9, 0.92, 0.94, 0.96, 0.98, 0.99]
