@@ -800,7 +800,11 @@ study of the question that we make sure it's not happening.
 
 Now the best checkpoint is still **12.4 points behind `π_D*` (empirical)** and **14.6 points behind `π_D*`
 (true-restricted)**. The natural next step is to see where it disagrees with the references and performs worse. It will 
-help us identify where and possibly how improvement can happen.
+help us identify where and possibly how improvement can happen. We define disagreement on an action to take at a particular state 
+as the combination of three conditions : 
+1. Both the empirical and the true-restricted versions of `π_D*` agree on the same action to take.
+2. The evaluated checkpoint disagrees and chooses another action.
+3. During evaluation, the PPO checkpoint performs worse than both references.
 
 The best checkpoint (epoch 180) was rolled out from every non-terminal
 state to compare against both `π_D*` definitions, under the same

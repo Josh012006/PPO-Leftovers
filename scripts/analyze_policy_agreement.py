@@ -90,7 +90,12 @@ true-restricted (more trustworthy) action in the large majority of cases.
 `is_disagreement_strict` therefore requires BOTH `--pi-d-star` and
 `--pi-d-star-cross-check` to independently flag the same state as a
 disagreement (their own `argmax_disagree` and `value_gap > 0` conditions
-each hold). `severity_strict` is the smaller (more conservative) of the
+each hold) AND to name the SAME action as the better one
+(`pi_d_star_action == pi_d_star_action_cross`) -- two references
+independently complaining that best-config is wrong, without agreeing
+on what it should have done instead, is a weaker claim than a real,
+resolvable disagreement, and is no longer counted as strict.
+`severity_strict` is the smaller (more conservative) of the
 two references' own severities, normalized the same way as the
 single-reference `severity` was (95th-percentile scale, computed only
 over strictly-disagreeing states). Both plots below use the strict
@@ -180,6 +185,7 @@ is_disagreement_cross
 severity_raw_cross
 statistically_significant_cross
 is_disagreement_strict
+references_agree_on_action
 severity_raw_strict
 severity_strict
 
@@ -861,10 +867,25 @@ def main():
             statistically_significant_cross = int(
                 argmax_disagree_cross and value_gap_cross > args.z_threshold * stderr
             )
-            is_disagreement_strict = int(is_disagreement and is_disagreement_cross)
+            # Strict disagreement now additionally requires BOTH references
+            # to name the SAME action -- not just that each independently
+            # flags best-config as worse than its own (possibly different)
+            # top pick. Without this, a state where empirical prefers
+            # action A and true-restricted prefers a DIFFERENT action B
+            # (best-config taking neither) could still count as "strict",
+            # even though the two references don't actually corroborate
+            # each other about what the better action IS -- only that
+            # best-config isn't it. Requiring agreement on the action
+            # itself is a stronger, more defensible standard: a real
+            # disagreement is one both references would resolve the same
+            # way, not just two separate complaints about best-config.
+            references_agree_on_action = int(pi_d_star_action == pi_d_star_action_cross)
+            is_disagreement_strict = int(
+                references_agree_on_action and is_disagreement and is_disagreement_cross
+            )
             # The more conservative (smaller) of the two raw severities --
             # only trusted when BOTH references independently flag a real,
-            # positive gap.
+            # positive gap AND agree on which action should have been taken.
             severity_raw_strict = (
                 min(severity_raw, severity_raw_cross) if is_disagreement_strict else 0.0
             )
@@ -877,6 +898,7 @@ def main():
             is_disagreement_cross = None
             severity_raw_cross = None
             statistically_significant_cross = None
+            references_agree_on_action = None
             is_disagreement_strict = is_disagreement
             severity_raw_strict = severity_raw
 
@@ -929,6 +951,7 @@ def main():
                 "severity_raw_cross": severity_raw_cross,
                 "statistically_significant_cross": statistically_significant_cross,
                 "is_disagreement_strict": is_disagreement_strict,
+                "references_agree_on_action": references_agree_on_action,
                 "severity_raw_strict": severity_raw_strict,
                 "severity_strict": 0.0,
             }
