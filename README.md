@@ -1213,6 +1213,11 @@ claim made above.
   optimizer used throughout every trainer in this project
   (`torch.optim.Adam`); its per-parameter moment estimates were relevant
   to reasoning about the `value_coef` / shared-gradient-clipping question.
+  - Cui, Y., Jia, M., Lin, T.-Y., Song, Y., & Belongie, S. (2019). *Class-Balanced 
+  Loss Based on Effective Number of Samples.* arXiv:1901.05555 (CVPR 2019).
+  [arxiv.org/abs/1901.05555](https://arxiv.org/abs/1901.05555) — the class-balancing 
+  method used to account for imbalanced training data by re-weighting the loss 
+  according to the effective number of samples in each class.
 
 **Implementation verification reference**
 
