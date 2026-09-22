@@ -1,0 +1,40 @@
+# Effective-sample-count weighting sweep, v2 -- properly calibrated to
+# D's actual (state, action) pair-count distribution (see README, "An
+# attempt to close the gap"). v1 (ppo_fixed_d_effective_sample_sweep.yaml)
+# tested beta up to 0.99 only -- a saturation scale (1/(1-beta)) of at
+# most 100, while 96.5% of D's TRANSITIONS belong to a pair with n > 100
+# (median pair-level n = 33, 75th percentile = 245, 90th = 838,
+# 95th = 1485, 99th = 5948, max = 13899). Every v1 beta therefore
+# suppressed the vast majority of the dataset's well-established signal
+# regardless of value, which is why performance degraded roughly
+# uniformly across the whole v1 range instead of recovering toward the
+# baseline as beta -> 1, as the math predicts it eventually must.
+#
+# This sweep's saturation scales span from roughly the pair-level
+# median up through the 99th percentile, plus one deliberate control
+# point (0.99999, scale=100000, comfortably past D's max n=13899) that
+# should behave almost exactly like the standard-PPO baseline -- if it
+# doesn't, that points to an implementation issue rather than scale
+# miscalibration.
+#
+# Every OTHER hyperparameter is fixed at the current best checkpoint's
+# values, exactly as in v1.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_beta: [0.995, 0.998, 0.999, 0.9995, 0.9999, 0.99999]

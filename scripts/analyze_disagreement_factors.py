@@ -73,13 +73,23 @@ protocol, every state IS the rollout start (see
 analyze_policy_agreement.py), so "distance from the start" has no
 meaningful interpretation here.
 
-For every factor EXCEPT coverage, both the RAW correlation and the
-PARTIAL correlation (controlling for coverage) against `severity` are
-reported -- coverage is the one variable everything else gets checked
-"on top of", the same way goal_distance was controlled for earlier (see
-README, "Policy agreement"). A factor whose partial correlation survives
-controlling for coverage is doing real, independent work; one that
-vanishes was likely just riding along with coverage.
+For every factor except `coverage` and `pi_beta_prob_gap` itself, THREE
+numbers are reported against `severity`: the RAW correlation, the
+PARTIAL correlation controlling for `coverage` alone (as before), and a
+second PARTIAL correlation controlling for BOTH `coverage` AND
+`pi_beta_prob_gap` together in one multiple regression (not two
+sequential single-variable residualizations, which would not be
+equivalent here since coverage and pi_beta_prob_gap are themselves
+correlated). This second control matters because `pi_beta_prob_gap`
+turns out to already predict most of what several other factors (most
+notably `action_sample_gap`) appeared to explain: pi_beta's own action
+counts in D are shaped by what pi_beta itself already preferred at that
+state (it explored its own preferred action more), so a factor built
+from D's sample counts can look like an independent predictor of
+severity while mostly just re-encoding pi_beta's pre-existing bias. A
+factor whose correlation survives this second, stricter control is
+doing real work beyond both coverage and inherited prior bias; one that
+collapses here was likely riding along with one or the other.
 
 Requires policy_agreement.csv from a previous run of
 scripts/analyze_policy_agreement.py -- by default the STRICT columns
@@ -147,6 +157,20 @@ def residualize(y: np.ndarray, x: np.ndarray) -> np.ndarray:
     x = np.asarray(x, dtype=float)
     y = np.asarray(y, dtype=float)
     A = np.vstack([x, np.ones_like(x)]).T
+    coef, *_ = np.linalg.lstsq(A, y, rcond=None)
+    return y - A @ coef
+
+
+def residualize_multi(y: np.ndarray, x_cols: list) -> np.ndarray:
+    """y with the linear effect of SEVERAL x columns removed at once (a
+    genuine multiple-regression residual, not two sequential single-
+    variable residualizations, which would not be equivalent whenever
+    the control variables are themselves correlated with each other --
+    exactly the case here: pi_beta_prob_gap and log_coverage are not
+    independent, so controlling for them one at a time vs. together can
+    give different answers)."""
+    y = np.asarray(y, dtype=float)
+    A = np.column_stack([np.asarray(x, dtype=float) for x in x_cols] + [np.ones_like(y)])
     coef, *_ = np.linalg.lstsq(A, y, rcond=None)
     return y - A @ coef
 
@@ -289,9 +313,31 @@ def main():
     print("\n=== coverage (baseline factor, raw correlation only) ===")
     r_cov = safe_corr(coverage, severity)
     print(f"  log_coverage vs severity: r = {r_cov:+.3f}")
-    summary_rows.append({"factor": "coverage", "raw_r": r_cov, "partial_r_controlling_coverage": None})
+    summary_rows.append(
+        {"factor": "coverage", "raw_r": r_cov, "partial_r_controlling_coverage": None, "partial_r_controlling_coverage_and_prior_pref": None}
+    )
 
-    print("\n=== other factors: raw vs. partial (controlling for coverage) ===")
+    prior_pref = df["pi_beta_prob_gap"].values.astype(float)
+    print(
+        "\n=== pi_beta_prob_gap (second control from here on: how much pi_beta ALREADY preferred "
+        "best-config's action over pi_D*'s, before any fixed-D training) ==="
+    )
+    raw_r_pp = safe_corr(prior_pref, severity)
+    resid_pp_cov = residualize(prior_pref, coverage)
+    resid_sev_cov_only = residualize(severity, coverage)
+    partial_r_pp_cov = safe_corr(resid_pp_cov, resid_sev_cov_only)
+    print(f"  {FACTOR_LABELS['pi_beta_prob_gap']:32s}  raw r = {raw_r_pp:+.3f}   partial r (net of coverage) = {partial_r_pp_cov:+.3f}")
+    summary_rows.append(
+        {
+            "factor": "pi_beta_prob_gap", "raw_r": raw_r_pp, "partial_r_controlling_coverage": partial_r_pp_cov,
+            "partial_r_controlling_coverage_and_prior_pref": None,  # controlling a variable for itself is meaningless
+        }
+    )
+
+    print(
+        "\n=== other factors: raw vs. partial (net of coverage) vs. partial (net of coverage AND "
+        "pi_beta's own pre-existing preference margin) ==="
+    )
     for factor in [
         "goal_distance",
         "hazard_distance",
@@ -299,19 +345,31 @@ def main():
         "action_sample_gap",
         "log_n_best_config_action",
         "log_pair_min_samples",
-        "pi_beta_prob_gap",
     ]:
         x = df[factor].values.astype(float)
         raw_r = safe_corr(x, severity)
         if np.std(severity) == 0 or np.std(coverage) == 0:
             partial_r = float("nan")
+            partial_r2 = float("nan")
         else:
             resid_x = residualize(x, coverage)
             resid_sev = residualize(severity, coverage)
             partial_r = safe_corr(resid_x, resid_sev)
+
+            resid_x2 = residualize_multi(x, [coverage, prior_pref])
+            resid_sev2 = residualize_multi(severity, [coverage, prior_pref])
+            partial_r2 = safe_corr(resid_x2, resid_sev2)
         label = FACTOR_LABELS[factor]
-        print(f"  {label:32s}  raw r = {raw_r:+.3f}   partial r (net of coverage) = {partial_r:+.3f}")
-        summary_rows.append({"factor": factor, "raw_r": raw_r, "partial_r_controlling_coverage": partial_r})
+        print(
+            f"  {label:32s}  raw r = {raw_r:+.3f}   net of coverage = {partial_r:+.3f}   "
+            f"net of coverage + prior pref = {partial_r2:+.3f}"
+        )
+        summary_rows.append(
+            {
+                "factor": factor, "raw_r": raw_r, "partial_r_controlling_coverage": partial_r,
+                "partial_r_controlling_coverage_and_prior_pref": partial_r2,
+            }
+        )
 
     summary_df = pd.DataFrame(summary_rows)
     summary_path = out_dir / "disagreement_factors_summary.csv"
@@ -319,20 +377,25 @@ def main():
     print(f"\nSaved {out_dir / 'disagreement_factors.csv'}")
     print(f"Saved {summary_path}")
 
-    # --- Bar chart: raw vs partial correlation per factor. ---
-    fig, ax = plt.subplots(figsize=(8, 0.6 * len(summary_df) + 1.5))
+    # --- Bar chart: raw vs. two levels of partial correlation per factor. ---
+    fig, ax = plt.subplots(figsize=(9, 0.75 * len(summary_df) + 1.5))
     y = np.arange(len(summary_df))
     labels = [FACTOR_LABELS.get(f, f) for f in summary_df["factor"]]
     raw_vals = summary_df["raw_r"].values
     partial_vals = summary_df["partial_r_controlling_coverage"].fillna(summary_df["raw_r"]).values
-    height = 0.35
-    ax.barh(y + height / 2, raw_vals, height=height, color="0.6", label="raw correlation")
-    ax.barh(y - height / 2, partial_vals, height=height, color="tab:blue", label="partial (net of coverage)")
+    partial_vals2 = summary_df["partial_r_controlling_coverage_and_prior_pref"].fillna(pd.Series(partial_vals)).values
+    height = 0.26
+    ax.barh(y + height, raw_vals, height=height, color="0.6", label="raw correlation")
+    ax.barh(y, partial_vals, height=height, color="tab:blue", label="partial (net of coverage)")
+    ax.barh(y - height, partial_vals2, height=height, color="tab:orange", label="partial (net of coverage + prior pref)")
     ax.axvline(0, color="black", linewidth=0.8)
     ax.set_yticks(y)
     ax.set_yticklabels(labels)
     ax.set_xlabel("correlation with disagreement severity")
-    ax.set_title("What predicts disagreement severity?\n(coverage has no separate partial bar)", fontsize=11)
+    ax.set_title(
+        "What predicts disagreement severity?\n(coverage: raw only; pi_beta_prob_gap: no third bar, it IS the prior-pref control)",
+        fontsize=10,
+    )
     ax.legend(fontsize=8)
     fig.tight_layout()
     plot_path = out_dir / "disagreement_factors_bars"
