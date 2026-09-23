@@ -1,0 +1,31 @@
+# Same starting beta=0.9995 as the other two eff_sample_beta_0_9995
+# configs, but decayed against measured cumulative KL-divergence from
+# pi_beta (fixed_d_trainer.py's _beta_for_epoch, KL-anchor mode) instead
+# of against the epoch number. scale(epoch) = scale_start * (1 +
+# |approx_kl at the previous epoch| / effective_sample_kl_k) --
+# effective_sample_kl_k=0.1 is a first, untuned guess at how much
+# cumulative drift should meaningfully weaken the effect; adjust and
+# re-sweep if this run's approx_kl trajectory suggests it decays too
+# fast or too slow relative to the v2 sweep's observed benefit (~epoch
+# 45-140) / harm (~epoch 170-210) windows.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_beta: 0.9995
+effective_sample_kl_anchor: true
+effective_sample_kl_k: 0.1

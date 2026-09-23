@@ -1,0 +1,28 @@
+# Same starting beta=0.9995 as ppo_fixed_d_eff_sample_beta_0_9995.yaml,
+# but linearly annealed to beta_final=1.0 by the last epoch (see
+# fixed_d_trainer.py's _beta_for_epoch) -- i.e. w(n)/n -> 1 by the end,
+# collapsing to today's plain per-transition averaging. Motivation: the
+# v2 sweep showed this same starting beta clearly beating baseline in
+# the epoch~45-140 window and clearly losing to it in the epoch~170-210
+# window (see README) -- annealing away the reweighting over the course
+# of training targets the early benefit without paying the late cost.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_beta: 0.9995
+effective_sample_beta_final: 1.0

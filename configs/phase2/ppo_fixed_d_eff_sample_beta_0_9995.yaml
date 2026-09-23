@@ -1,0 +1,27 @@
+# beta=0.9995 constant, all other hyperparameters at the current best
+# checkpoint's values. See README, "An attempt to close the gap" -- the
+# v2 sweep's most promising single point (best=0.4815, final=0.4335,
+# though still below baseline on mean=0.4127 over the full run).
+# Re-run here specifically WITH --save-all-checkpoints (via
+# scripts/analyze_policy_agreement.py --best-config), which the v2
+# sweep did not do, so the resulting checkpoint can go through the same
+# disagreement analysis as the standard best_config.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_beta: 0.9995
