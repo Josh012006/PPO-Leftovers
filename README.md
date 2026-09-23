@@ -1307,6 +1307,10 @@ Best checkpoint: epoch 140, `weighted_success_rate=0.4845`.
 | `π_D*` (empirical) | 56.4% | 74.2% | 29.2% | 47.3% |
 | `π_D*` (true-restricted) | 59.6% | 75.2% | 39.4% | 53.4% |
 
+
+### A more rigorous sweep of the two new hyperparameters : $\beta$ and $k$
+
+
 ## Project structure
 
 ```
@@ -1587,11 +1591,17 @@ claim made above.
   optimizer used throughout every trainer in this project
   (`torch.optim.Adam`); its per-parameter moment estimates were relevant
   to reasoning about the `value_coef` / shared-gradient-clipping question.
-  - Cui, Y., Jia, M., Lin, T.-Y., Song, Y., & Belongie, S. (2019). *Class-Balanced 
+- Cui, Y., Jia, M., Lin, T.-Y., Song, Y., & Belongie, S. (2019). *Class-Balanced 
   Loss Based on Effective Number of Samples.* arXiv:1901.05555 (CVPR 2019).
   [arxiv.org/abs/1901.05555](https://arxiv.org/abs/1901.05555) — the class-balancing 
   method used to account for imbalanced training data by re-weighting the loss 
   according to the effective number of samples in each class.
+- Osband, I., Blundell, C., Pritzel, A., & Van Roy, B. (2016). *Deep
+  Exploration via Bootstrapped DQN.* arXiv:1602.04621 (NeurIPS 2016).
+  [arxiv.org/abs/1602.04621](https://arxiv.org/abs/1602.04621) — proposed
+  alternative to RND for the same purpose: an ensemble of value heads
+  whose disagreement, rather than a separate predictor network's error,
+  serves as the confidence signal.
 
 **Implementation verification reference**
 
