@@ -1,0 +1,29 @@
+# Sweep over effective_sample_kl_k, the untuned hyperparameter from the
+# KL-anchored decay mode (see README, "Testing our second hypothesis").
+# beta=0.9995 and every other hyperparameter fixed at the current best
+# configuration's values; only k varies. Smaller k decays the
+# weighting's strength faster per unit of cumulative KL-drift from
+# pi_beta; larger k keeps it strong for longer. k=0.1 (the untuned first
+# guess used for the current best checkpoint) is included as a
+# reference point within the grid, not just a baseline to beat.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_beta: 0.9995
+effective_sample_kl_anchor: true
+effective_sample_kl_k: [0.02, 0.05, 0.1, 0.2, 0.3, 0.5]
