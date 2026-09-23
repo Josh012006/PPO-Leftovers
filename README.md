@@ -1130,6 +1130,183 @@ with `w(n) = (1 − βⁿ)/(1 − β)`. `β` joins the project's existing
 hyperparameters as something to sweep, not a fixed constant.
 
 
+## Testing our second hypothesis
+
+The effective-sample-count weighting idea from the previous section --
+give a (state, action) pair's contribution to the policy loss a
+saturating weight `w(n)/n` instead of the plain `n` today's uniform
+averaging gives it -- was tested directly against the fixed-D pipeline,
+not just reasoned about.
+
+### Calibrating the sweep against D's actual scale
+
+A first sweep tested `beta` up to 0.99 (the scale that illustrated the
+idea cleanly on state 717's n=2-vs-13 contrast). Every value in that
+range made things uniformly worse, including `beta=0.99` itself, which
+should have been close to a no-op. The reason: 96.5% of D's
+*transitions* belong to a (state, action) pair with `n > 100` --
+`beta=0.99`'s saturation scale (`1/(1-beta) = 100`) was already
+suppressing the vast majority of the dataset's well-established signal,
+not just the sparse pairs the idea was meant to protect. We calibrated `beta`
+against D's own pair-count distribution
+(median 33, 90th percentile 838, 99th percentile 5948, max 13899), not
+against the specific illustrative example that motivated the idea.
+
+### The properly-calibrated sweep
+
+A second sweep tested `beta` from 0.995 up to 0.99999 (saturation
+scales 200 to 100000), spanning D's real range, all other
+hyperparameters fixed at the current best configuration's values (see
+`configs/phase2/ppo_fixed_d_effective_sample_sweep_v2.yaml`):
+
+<div align="center">
+
+| `beta` | saturation scale | mean | best | final | std |
+|---|---|---|---|---|---|
+| -- (baseline) | -- | **0.4127** | 0.4720 | 0.4160 | 0.0495 |
+| 0.995 | 200 | 0.2955 | 0.3715 | 0.3160 | 0.0723 |
+| 0.998 | 500 | 0.3254 | 0.3860 | 0.2520 | 0.0516 |
+| 0.999 | 1000 | 0.4017 | 0.4690 | 0.4090 | 0.0604 |
+| 0.9995 | 2000 | 0.4074 | **0.4815** | **0.4335** | 0.0643 |
+| 0.9999 | 10000 | 0.3117 | 0.3750 | 0.2855 | 0.0268 |
+| 0.99999 | 100000 | 0.3106 | 0.4265 | 0.2335 | 0.0741 |
+
+</div>
+
+By this project's own established criterion (mean over the run, not a
+single peak epoch -- see "Our new starting point") no `beta` beats the
+baseline. But `beta=0.9995` beats it clearly on `best` and `final`
+while landing close on `mean` (0.407 vs. 0.413) -- worth a closer look
+rather than a flat rejection on the mean alone:
+
+<div align="center">
+<img src="results/phase2/analysis/effective_sample_weighting_v2/beta_0_9995_vs_baseline.png" width="85%"><br><em>beta=0.9995 (constant) vs. baseline, full 300-epoch trajectory.</em>
+</div>
+
+The trajectory shows why the mean undersells it: `beta=0.9995` clearly
+leads for a long early-to-mid stretch, then falls behind later, roughly
+cancelling out in the average despite the visibly different shape. The
+same pattern reproduces at `beta=0.999`, not just this one run:
+
+<div align="center">
+<img src="results/phase2/analysis/effective_sample_weighting_v2/beta_phase_pattern.png" width="85%"><br><em>Both beta=0.999 and beta=0.9995 outperform baseline in a shared early/mid window (green) and underperform it in a shared later window (red).</em>
+</div>
+
+<div align="center">
+
+| | epoch 45-140 mean | epoch 170-210 mean |
+|---|---|---|
+| baseline | 0.393 | 0.457 |
+| beta=0.999 | 0.422 (+0.029) | 0.427 (-0.030) |
+| beta=0.9995 | 0.445 (+0.052) | 0.408 (-0.050) |
+
+</div>
+
+The effect scales with how far `beta` sits from 1 in both directions --
+consistent with a real, reproducible phase-dependent pattern rather than
+noise from a single run: the weighting helps while the policy is still
+actively correcting `pi_beta`'s inherited biases, then adds instability
+once training has mostly settled.
+
+### Three ways to exploit the pattern
+
+**Constant `beta`** (the sweep above) doesn't target the pattern at all
+-- same weighting strength for all 300 epochs regardless of phase.
+
+**Linear epoch-anneal** (`PPOHyperparams.effective_sample_beta_final`):
+`beta` moves linearly from `effective_sample_beta` at epoch 0 to
+`effective_sample_beta_final` at the last epoch. Tested at
+`beta: 0.9995 -> 1.0`. This turned out to target the wrong thing: what
+matters is the saturation *scale* (`1/(1-beta)`), and that quantity is
+a highly non-linear function of `beta` near 1 -- linear steps in `beta`
+translate into a scale that barely moves for most of training (2000 at
+epoch 0 to only 3761 by epoch 140) and then explodes in the last ~50
+epochs. The schedule stayed almost as strong through the harmful
+170-210 window as through the beneficial 45-140 one, and hitting
+`beta=1.0` exactly at the very last epoch produced an outright collapse
+rather than a graceful return to baseline (see the results below). A
+fixed epoch number is also a poor anchor on principle: a differently-
+paced config (different `lr`, `clip_eps`) reaches the same point in
+training at a different epoch, so a schedule tuned in epoch-space
+wouldn't transfer.
+
+**KL-anchored decay** (`PPOHyperparams.effective_sample_kl_anchor`,
+`effective_sample_kl_k`): decays against `approx_kl` instead of the
+epoch number. Since `pi_old` (`pi_beta`) never moves in this trainer,
+`approx_kl` at any epoch already measures the *cumulative* divergence of
+the current policy from `pi_beta`, not a per-epoch increment -- a
+quantity every run already computes, and one that reflects how far
+training has actually progressed rather than how many epochs have
+ticked by. The saturation scale is recomputed every epoch from the
+*previous* epoch's `approx_kl` (0.0 at epoch 0, i.e. full starting
+strength):
+
+$$
+s(t) = s_{0}\left(1 + \frac{\left|\overline{\mathrm{KL}}_{t-1}\right|}{k}\right)
+\qquad
+\beta(t) = 1 - \frac{1}{s(t)}
+$$
+
+`effective_sample_kl_k` is a new hyperparameter -- how much cumulative
+drift it takes to meaningfully weaken the effect. `k=0.1` (untuned, a
+first guess) was used for the run below.
+
+### Results
+
+All three modes started from `beta=0.9995`, all other hyperparameters
+fixed, all trained with `--save-all-checkpoints` under `eval_seed=999`:
+
+<div align="center">
+
+| | mean | best (epoch) | final | std | strict disagreements |
+|---|---|---|---|---|---|
+| baseline | 0.4127 | 0.4720 (180) | 0.4160 | 0.0495 | 66 |
+| constant `beta=0.9995` | 0.4074 | 0.4815 | 0.4335 | 0.0643 | 65 |
+| linear anneal `-> 1.0` | 0.3999 | 0.4820 | 0.3030 | 0.0798 | 63 |
+| **KL-anchored, `k=0.1`** | **0.4289** | **0.4845 (140)** | **0.4705** | 0.0679 | **51** |
+
+</div>
+
+<div align="center">
+<img src="results/phase2/analysis/eff_sample_beta_0_9995_kl_anchored/four_way_comparison.png" width="90%"><br><em>All four trajectories. The linear anneal collapses sharply once beta hits 1.0 exactly (~epoch 245) rather than fading gracefully. The KL-anchored run is the only one that stays elevated through the back half of training instead of fading or collapsing.</em>
+</div>
+
+The KL-anchored run is the first configuration in this whole
+investigation to beat the baseline on `mean` -- this project's own
+standing criterion, chosen specifically to resist exactly the kind of
+peak-chasing illusion a `best`-only reading would invite. It also cuts
+strict disagreement from 66 down to 51 states (-23%), a state-level
+confirmation that isn't just an artifact of how the aggregate is
+computed.
+
+### New best configuration
+
+`clip_eps=0.55, gae_lambda=0.90, entropy_coef=0.0, value_coef=1.0,
+max_grad_norm=0.1` (unchanged) plus `use_effective_sample_weighting=
+true, effective_sample_beta=0.9995, effective_sample_kl_anchor=true,
+effective_sample_kl_k=0.1` replaces the previous best configuration.
+Best checkpoint: epoch 140, `weighted_success_rate=0.4845`.
+
+<div align="center">
+<img src="results/phase2/analysis/eff_sample_beta_0_9995_kl_anchored/best_config_retrain_success_return.svg" width="80%"><br><em>The new best configuration evaluated under seed=999: the three raw success_rate populations per checkpoint, epoch 0 through 300.</em>
+</div>
+
+<br />
+
+<div align="center">
+<img src="results/phase2/analysis/eff_sample_beta_0_9995_kl_anchored/best_config_retrain_weighted.svg" width="80%"><br><em>The same run's weighted_success_rate curve. Best: epoch 140.</em>
+</div>
+
+<br/>
+
+| | overall | covered | held-out | weighted |
+|---|---|---|---|---|
+| `π_β` (prior) | 40.0% | 46.2% | 19.4% | 31.3% |
+| old best checkpoint (epoch 180) | 53.4% | 60.6% | 37.4% | 47.2% |
+| **new best checkpoint (epoch 140, KL-anchored)** | **55.2%** | **63.8%** | **37.4%** | **48.5%** |
+| `π_D*` (empirical) | 56.4% | 74.2% | 29.2% | 47.3% |
+| `π_D*` (true-restricted) | 59.6% | 75.2% | 39.4% | 53.4% |
+
 ## Project structure
 
 ```
