@@ -66,6 +66,9 @@ class FrozenLakeWrapper:
     def get_state(self) -> int:
         return self._state
 
+    def close(self):
+        self._env.close()
+
     def is_terminal_state(self, state: int) -> bool:
         return state in self._terminal_states
 

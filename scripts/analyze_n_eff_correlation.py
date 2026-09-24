@@ -221,6 +221,9 @@ class RiverSwimWrapper:
     def get_state(self) -> int:
         return self._state
 
+    def close(self):
+        pass  # no real gym env to close
+
 
 def build_river_swim_testbed(args):
     from ppo_exploitation.data.collect import collect_fixed_dataset
@@ -294,6 +297,9 @@ class TaxiWrapper:
     def get_state(self) -> int:
         return self._state
 
+    def close(self):
+        self._env.close()
+
 
 def build_taxi_testbed(args):
     from ppo_exploitation.data.collect import collect_fixed_dataset
@@ -315,7 +321,7 @@ def build_taxi_testbed(args):
         )
         agent.update(trajectories)
 
-    dataset = collect_fixed_dataset(env, agent.net, n_episodes=args.n_episodes, seed=args.seed + 1, sample_actions=True)
+    dataset = collect_fixed_dataset(env, agent.net, n_episodes=args.taxi_n_episodes, seed=args.seed + 1, sample_actions=True)
     return f"taxi ({args.taxi_encoding})", dataset.obs_dim, dataset.n_actions, dataset, agent.net.state_dict(), (32, 32)
 
 
@@ -356,6 +362,9 @@ class BlackjackWrapper:
 
     def get_state(self) -> int:
         return self._state
+
+    def close(self):
+        self._env.close()
 
 
 def build_blackjack_testbed(args):
@@ -465,6 +474,29 @@ def _run_one_testbed(testbed_name, args):
     elif n_significant is not None:
         print(f"  {n_significant}/{diag['n_pairs']} pairs flagged significant")
 
+    # Min-max normalize each weight array to [0, 1] SEPARATELY, for the
+    # plot only -- the correlation numbers above are computed on the raw
+    # weight multipliers and are unaffected either way (both Spearman and
+    # Pearson are invariant to a monotonic/affine rescaling like this).
+    # Without it, weight_exact clusters tightly near 1 for most testbeds
+    # (most (state, action) pairs' exact counts sit well below the
+    # saturation scale 1/(1-beta), so their weight is close to the
+    # unsaturated ceiling) while only a few heavily-saturated pairs pull
+    # it down -- visually this crams almost every point into a thin strip
+    # at the top of the y-axis, hiding the actual shape of the
+    # relationship. Rescaling each array to use its own full range makes
+    # the same underlying correlation visible instead of buried in a
+    # sliver.
+    def normalize_for_plot(x):
+        lo, hi = x.min(), x.max()
+        if hi - lo < 1e-12:
+            return np.zeros_like(x)
+        return (x - lo) / (hi - lo)
+
+    weight_exact_norm = normalize_for_plot(weight_exact)
+    weight_no_threshold_norm = normalize_for_plot(weight_no_threshold)
+    weight_thresholded_norm = normalize_for_plot(weight_thresholded)
+
     fig, axes = plt.subplots(1, 3, figsize=(18, 5.5))
     axes[0].scatter(exact_n, n_eff_no_threshold, alpha=0.25, s=10)
     axes[0].set_xscale("log")
@@ -473,16 +505,16 @@ def _run_one_testbed(testbed_name, args):
     axes[0].set_ylabel("ensemble n_eff (no threshold)")
     axes[0].set_title(f"Raw signal\nSpearman rho={spearman_raw:.3f}, Pearson (log-log)={pearson_raw:.3f}")
 
-    axes[1].scatter(weight_exact, weight_no_threshold, alpha=0.25, s=10, color="tab:orange")
+    axes[1].scatter(weight_exact_norm, weight_no_threshold_norm, alpha=0.25, s=10, color="tab:orange")
     axes[1].plot([0, 1], [0, 1], color="black", linestyle="--", linewidth=1)
-    axes[1].set_xlabel("weight multiplier from exact count")
-    axes[1].set_ylabel("weight multiplier from n_eff (no threshold)")
+    axes[1].set_xlabel("weight multiplier from exact count (normalized to [0,1])")
+    axes[1].set_ylabel("weight multiplier from n_eff, no threshold (normalized)")
     axes[1].set_title(f"Loss weight, un-gated\nSpearman rho={spearman_w_no_thresh:.3f}, Pearson={pearson_w_no_thresh:.3f}")
 
-    axes[2].scatter(weight_exact, weight_thresholded, alpha=0.25, s=10, color="tab:green")
+    axes[2].scatter(weight_exact_norm, weight_thresholded_norm, alpha=0.25, s=10, color="tab:green")
     axes[2].plot([0, 1], [0, 1], color="black", linestyle="--", linewidth=1)
-    axes[2].set_xlabel("weight multiplier from exact count")
-    axes[2].set_ylabel("weight multiplier from n_eff (thresholded)")
+    axes[2].set_xlabel("weight multiplier from exact count (normalized to [0,1])")
+    axes[2].set_ylabel("weight multiplier from n_eff, thresholded (normalized)")
     axes[2].set_title(f"Loss weight, WITH threshold\nSpearman rho={spearman_w_thresh:.3f}, Pearson={pearson_w_thresh:.3f}")
 
     fig.suptitle(f"{label}: does ensemble n_eff track the true exact count and its loss-weight behavior?")
@@ -490,7 +522,6 @@ def _run_one_testbed(testbed_name, args):
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     safe_label = label.replace(" ", "_").replace("(", "").replace(")", "")
-    fig.savefig(out_dir / f"{safe_label}_n_eff_correlation.svg")
     fig.savefig(out_dir / f"{safe_label}_n_eff_correlation.png", dpi=150)
     plt.close(fig)
 
@@ -524,8 +555,14 @@ def main():
     parser.add_argument(
         "--n-episodes", type=int, default=500,
         help="Episodes of D to collect for the fresh testbeds. Blackjack needs several thousand (short "
-        "episodes); taxi's memory footprint scales with this too (500-dim one-hot per transition) -- lower "
-        "it for taxi specifically on a memory-constrained machine.",
+        "episodes). Taxi uses its own --taxi-n-episodes instead (see below), not this flag.",
+    )
+    parser.add_argument(
+        "--taxi-n-episodes", type=int, default=500,
+        help="Episodes of D to collect for taxi specifically -- kept separate from --n-episodes because "
+        "taxi's 500-dim one-hot encoding makes its memory footprint per episode much larger than the other "
+        "testbeds (500 at max_steps=200 was the largest that stayed comfortably under 2GB peak in testing; "
+        "raise cautiously).",
     )
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--ensemble-n-heads", type=int, default=5)
@@ -565,7 +602,7 @@ def main():
     summary_df = pd.DataFrame(results)
     summary_path = out_dir / "n_eff_correlation_summary.csv"
     summary_df.to_csv(summary_path, index=False)
-    print(f"\nSaved {summary_path} and one <testbed>_n_eff_correlation.svg/.png per testbed in {out_dir}")
+    print(f"\nSaved {summary_path} and one <testbed>_n_eff_correlation.png per testbed in {out_dir}")
 
 
 if __name__ == "__main__":
