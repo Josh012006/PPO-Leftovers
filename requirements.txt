@@ -6,3 +6,4 @@ pandas>=2.0
 matplotlib>=3.7
 tqdm>=4.66
 pytest>=7.4
+scipy>=1.10
