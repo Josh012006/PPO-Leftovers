@@ -88,9 +88,13 @@ from ppo_exploitation.utils.seeding import set_global_seed
 # gymnasium's own P table rather than re-deriving FrozenLake's slip rule.
 # --------------------------------------------------------------------------
 class TaxiWrapper:
-    def __init__(self, max_steps: int = 200):
+    def __init__(self, max_steps: int = 200, encoding: str = "onehot"):
         import gymnasium as gym
         from gymnasium import spaces
+
+        if encoding not in ("onehot", "decomposed"):
+            raise ValueError(f"encoding must be 'onehot' or 'decomposed', got {encoding!r}")
+        self.encoding = encoding
 
         # Taxi-v4 deprecated v3 in newer gymnasium releases; try v4 first,
         # fall back to v3 for older installs, rather than hard-coding one
@@ -102,23 +106,45 @@ class TaxiWrapper:
         self.n_states = int(self._env.observation_space.n)
         self.n_actions = int(self._env.action_space.n)
         self.action_space = spaces.Discrete(self.n_actions)
-        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(self.n_states,), dtype=np.float32)
+        if encoding == "onehot":
+            obs_dim = self.n_states
+        else:
+            # 5 taxi rows + 5 taxi cols + 5 passenger locations (4 pickup
+            # spots + "in taxi") + 4 destinations -- a small, structured
+            # encoding that keeps states sharing a component (e.g. same
+            # taxi position, different destination) close to each other
+            # in input space, unlike the flat one-hot's 500 mutually-
+            # orthogonal vectors. See README's ensemble-uncertainty
+            # section for why this structure matters: the ensemble's
+            # disagreement signal partly relies on the network
+            # generalizing across similar inputs, which a flat one-hot
+            # over 500 states gives it no way to do.
+            obs_dim = 5 + 5 + 5 + 4
+        self.observation_space = spaces.Box(low=0.0, high=1.0, shape=(obs_dim,), dtype=np.float32)
         self._state = 0
 
-    def _one_hot(self, state: int) -> np.ndarray:
-        v = np.zeros(self.n_states, dtype=np.float32)
-        v[state] = 1.0
+    def _encode(self, state: int) -> np.ndarray:
+        if self.encoding == "onehot":
+            v = np.zeros(self.n_states, dtype=np.float32)
+            v[state] = 1.0
+            return v
+        taxi_row, taxi_col, passenger_loc, destination = self._env.unwrapped.decode(state)
+        v = np.zeros(19, dtype=np.float32)
+        v[taxi_row] = 1.0
+        v[5 + taxi_col] = 1.0
+        v[10 + passenger_loc] = 1.0
+        v[15 + destination] = 1.0
         return v
 
     def reset(self, *, seed=None, options=None):
         obs, info = self._env.reset(seed=seed)
         self._state = int(obs)
-        return self._one_hot(self._state), {"state": self._state}
+        return self._encode(self._state), {"state": self._state}
 
     def step(self, action: int):
         obs, reward, terminated, truncated, info = self._env.step(int(action))
         self._state = int(obs)
-        return self._one_hot(self._state), float(reward), bool(terminated), bool(truncated), {"state": self._state}
+        return self._encode(self._state), float(reward), bool(terminated), bool(truncated), {"state": self._state}
 
     def get_state(self) -> int:
         return self._state
@@ -180,23 +206,31 @@ def build_new_maze_layout_testbed(args) -> tuple[str, int, int, object, dict, tu
 
 
 def build_taxi_testbed(args) -> tuple[str, int, int, object, dict, tuple[int, ...]]:
-    """gymnasium's Taxi-v3 -- an environment this project did not build,
-    with a qualitatively different (state, action) sparsity structure
-    than grid navigation (see module docstring)."""
+    """gymnasium's Taxi-v3/v4 -- an environment this project did not
+    build, with a qualitatively different (state, action) sparsity
+    structure than grid navigation (see module docstring). --taxi-
+    encoding controls whether states are represented as a flat 500-dim
+    one-hot (no proximity structure at all between states) or a small,
+    structured 19-dim decomposition (taxi row/col, passenger location,
+    destination) that keeps related states close in input space -- see
+    TaxiWrapper for why this choice plausibly matters a lot for this
+    project's ensemble mechanism specifically."""
     set_global_seed(args.seed)
-    env = TaxiWrapper(max_steps=200)
-    print("  [taxi] training a short online-PPO prior...")
+    env = TaxiWrapper(max_steps=200, encoding=args.taxi_encoding)
+    print(f"  [taxi] training a short online-PPO prior (encoding={args.taxi_encoding})...")
     prior_cfg = OnlinePPOConfig(
         total_iterations=args.prior_iterations, rollout_steps=512, n_envs=4, epochs=4, minibatch_size=128,
         entropy_coef=0.02, hidden_sizes=(32, 32), eval_every=args.prior_iterations + 1, seed=args.seed,
     )
     agent = OnlinePPOAgent(env.observation_space.shape[0], env.n_actions, prior_cfg)
     for _ in range(prior_cfg.total_iterations):
-        trajectories = agent.collect_rollout([lambda: TaxiWrapper(max_steps=200) for _ in range(prior_cfg.n_envs)])
+        trajectories = agent.collect_rollout(
+            [lambda: TaxiWrapper(max_steps=200, encoding=args.taxi_encoding) for _ in range(prior_cfg.n_envs)]
+        )
         agent.update(trajectories)
 
     dataset = collect_fixed_dataset(env, agent.net, n_episodes=args.n_episodes, seed=args.seed + 1, sample_actions=True)
-    return "taxi", dataset.obs_dim, dataset.n_actions, dataset, agent.net.state_dict(), (32, 32)
+    return f"taxi ({args.taxi_encoding})", dataset.obs_dim, dataset.n_actions, dataset, agent.net.state_dict(), (32, 32)
 
 
 TESTBED_BUILDERS = {
@@ -213,6 +247,7 @@ def main():
     parser.add_argument("--current-maze-prior", default="results/phase2/prior_checkpoint.pt")
     parser.add_argument("--new-maze-size", type=int, default=10)
     parser.add_argument("--new-maze-layout-seed", type=int, default=7, help="Anything != 0, the seed used everywhere else in this project.")
+    parser.add_argument("--taxi-encoding", choices=["onehot", "decomposed"], default="onehot", help="See TaxiWrapper.")
     parser.add_argument("--prior-iterations", type=int, default=60, help="Online-PPO iterations for the fresh-prior testbeds (new-maze-layout, taxi).")
     parser.add_argument("--n-episodes", type=int, default=500, help="Episodes of D to collect for the fresh testbeds.")
     parser.add_argument("--seed", type=int, default=0)
