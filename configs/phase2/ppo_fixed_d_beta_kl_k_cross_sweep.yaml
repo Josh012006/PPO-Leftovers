@@ -1,0 +1,35 @@
+# Cross-sweep: effective_sample_beta x effective_sample_kl_k, for the
+# KL-anchored decay mode (see README, "Testing our second hypothesis").
+# beta=0.9995 x all 6 k values was already covered by
+# configs/phase2/ppo_fixed_d_kl_k_sweep.yaml -- 0.9995 is deliberately
+# left out of the beta list below so this file only adds the missing
+# cells of the grid, not a redundant re-run of that row.
+#
+# 5 betas x 6 k = 30 combinations. generate_combinations (scripts/
+# analyze_sweep.py) takes the full cartesian product of every list-
+# valued field automatically -- no manual combo listing needed, exactly
+# like this project's earlier cross-sweeps (H3 x H2, H1 x max_grad_norm).
+#
+# All other hyperparameters fixed at the current best configuration's
+# values.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_kl_anchor: true
+effective_sample_beta: [0.995, 0.999, 0.9999, 0.99995, 0.99999]
+effective_sample_kl_k: [0.02, 0.05, 0.1, 0.2, 0.3, 0.5]
