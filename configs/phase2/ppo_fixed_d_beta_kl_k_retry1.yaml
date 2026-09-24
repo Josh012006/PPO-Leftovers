@@ -1,0 +1,25 @@
+# Retry 1/2: just the one missing combination from the original cross-sweep
+# (beta=0.999, k=0.2 failed to OOM from a concurrent process, not a real
+# hyperparameter issue). Everything else fixed at the current best
+# configuration's values, same as the original cross-sweep.
+
+epochs: 300
+minibatch_size: 256
+
+clip_eps: 0.55
+gamma: 0.99
+gae_lambda: 0.90
+entropy_coef: 0.0
+value_coef: 1.0
+max_grad_norm: 0.1
+normalize_advantages: true
+
+lr: 0.0003
+hidden_sizes: [64, 64]
+
+seed: 0
+
+use_effective_sample_weighting: true
+effective_sample_kl_anchor: true
+effective_sample_beta: [0.999]
+effective_sample_kl_k: [0.2]

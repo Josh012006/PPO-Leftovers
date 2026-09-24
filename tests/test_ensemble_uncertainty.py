@@ -75,7 +75,7 @@ def test_ensemble_training_reduces_loss_on_easy_synthetic_data():
     returns = (2.0 * obs[:, 0] + 0.5).astype(np.float32)  # easy, low-noise target
 
     cfg = PPOHyperparams(ensemble_n_heads=3, ensemble_hidden_sizes=(16, 16), ensemble_epochs=1, ensemble_lr=1e-2, minibatch_size=64)
-    _, ensemble = train_ensemble_and_compute_n_eff(obs, actions, returns, obs_dim=3, n_actions=2, cfg=cfg)
+    _, _, ensemble = train_ensemble_and_compute_n_eff(obs, actions, returns, obs_dim=3, n_actions=2, cfg=cfg)
     obs_t = torch.as_tensor(obs, dtype=torch.float32)
     actions_t = torch.as_tensor(actions, dtype=torch.int64)
     returns_t = torch.as_tensor(returns, dtype=torch.float32)
@@ -87,7 +87,7 @@ def test_ensemble_training_reduces_loss_on_easy_synthetic_data():
 
     cfg_more = PPOHyperparams(ensemble_n_heads=3, ensemble_hidden_sizes=(16, 16), ensemble_epochs=60, ensemble_lr=1e-2, minibatch_size=64)
     set_global_seed(0)
-    _, ensemble_more = train_ensemble_and_compute_n_eff(obs, actions, returns, obs_dim=3, n_actions=2, cfg=cfg_more)
+    _, _, ensemble_more = train_ensemble_and_compute_n_eff(obs, actions, returns, obs_dim=3, n_actions=2, cfg=cfg_more)
     with torch.no_grad():
         preds2 = ensemble_more(obs_t)
         preds_taken2 = preds2.gather(2, gather_idx).squeeze(-1)
@@ -137,7 +137,7 @@ def test_n_eff_ranks_well_supported_pair_above_noisy_sparse_pair():
     returns = np.array(rows_returns, dtype=np.float32)
 
     cfg = PPOHyperparams(ensemble_n_heads=6, ensemble_hidden_sizes=(32, 32), ensemble_epochs=150, ensemble_lr=5e-3, minibatch_size=64)
-    n_eff, _ = train_ensemble_and_compute_n_eff(obs, actions, returns, obs_dim=obs_dim, n_actions=n_actions, cfg=cfg)
+    n_eff, _, _ = train_ensemble_and_compute_n_eff(obs, actions, returns, obs_dim=obs_dim, n_actions=n_actions, cfg=cfg)
 
     well_supported_mask = (actions == action_of_interest) & np.all(obs == well_supported_obs, axis=1)
     noisy_sparse_mask = (actions == action_of_interest) & np.all(obs == noisy_sparse_obs, axis=1)
