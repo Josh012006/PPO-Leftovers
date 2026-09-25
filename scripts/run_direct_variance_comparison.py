@@ -46,6 +46,8 @@ def main():
     parser.add_argument("--ensemble-epochs", type=int, default=30)
     parser.add_argument("--ensemble-lr", type=float, default=1e-3)
     parser.add_argument("--tau-quantile", type=float, default=0.5, help="See calibrate_tau in fixed_d_trainer_variance_weighted.py.")
+    parser.add_argument("--tau-kl-anchor", action="store_true", help="Shrink tau as cumulative KL drift from pi_beta grows -- see fixed_d_trainer_variance_weighted.py module docstring. Off (constant tau) by default.")
+    parser.add_argument("--tau-kl-k", type=float, default=0.1, help="Only used when --tau-kl-anchor is set. Smaller = faster fade per unit of cumulative KL.")
     parser.add_argument("--checkpoint-every", type=int, default=5, help="Evaluate every N epochs.")
     parser.add_argument("--eval-episodes", type=int, default=500)
     parser.add_argument("--eval-seed", type=int, default=999)
@@ -80,6 +82,7 @@ def main():
         dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg, prior_state_dict=ckpt["state_dict"],
         ensemble_n_heads=args.ensemble_n_heads, ensemble_hidden_sizes=tuple(args.ensemble_hidden_sizes),
         ensemble_epochs=args.ensemble_epochs, ensemble_lr=args.ensemble_lr, tau_quantile=args.tau_quantile,
+        tau_kl_anchor=args.tau_kl_anchor, tau_kl_k=args.tau_kl_k,
     )
     print(
         f"tau={trainer.tau:.6f}  weights: min={trainer.policy_loss_weights.min():.4f} "
