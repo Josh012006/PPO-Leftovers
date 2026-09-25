@@ -1,0 +1,2 @@
+effective_sample_beta,effective_sample_kl_k,prefix,best,best_overall,mean,std,final,csv_path,best_checkpoint_epoch,seconds_per_epoch,status
+0.999,0.2,beta_kl_k_retry1_effective_sample_beta_0_999_effective_sample_kl_k_0_2,0.4695,0.546,0.4078114754098361,0.06401133779355202,0.39049999999999996,results\phase2\analysis\beta_kl_k_cross_sweep_retry1\beta_kl_k_retry1_effective_sample_beta_0_999_effective_sample_kl_k_0_2.csv,,46.14492844343185,ran
