@@ -1368,15 +1368,66 @@ Same as before except `effective_sample_kl_k=0.30` (was `0.10`):
 `clip_eps=0.55, gae_lambda=0.90, entropy_coef=0.0, value_coef=1.0,
 max_grad_norm=0.1, use_effective_sample_weighting=true,
 effective_sample_beta=0.9995, effective_sample_kl_anchor=true,
-effective_sample_kl_k=0.30`.
+effective_sample_kl_k=0.30`. Best checkpoint: epoch 150,
+`weighted_success_rate=0.4840` -- essentially tied with `k=0.10`'s own
+peak (epoch 140, 0.4845; identical overall/covered/held_out breakdown to
+three decimal places). The `mean` advantage this configuration was chosen
+for (0.4357 vs. 0.4289) comes entirely from behaving better AWAY from
+that peak across the run, not from a stronger peak itself.
 
-This configuration has not yet been run with `--save-all-checkpoints`, so
-there is no saved checkpoint for it yet, no per-epoch weighted_success_
-rate curve, and no disagreement-state analysis (the sweep run above only
-records the aggregate mean/best/final, not every epoch's checkpoint).
-That run -- identical in spirit to the one that produced the `k=0.10`
-checkpoint documented above -- is the natural next step before treating
-`k=0.30` as the configuration to build on further.
+### Disagreement analysis on `k=0.30`, and a genuine surprise
+
+Re-running the full disagreement pipeline (`analyze_policy_agreement.py
+--save-all-checkpoints`, `analyze_disagreement_factors.py`,
+`analyze_patched_disagreement_states.py`) on `k=0.30`'s own best
+checkpoint, exactly as done for `k=0.10` above, gives:
+
+<div align="center">
+
+| | strict disagreements | patch delta (weighted) |
+|---|---|---|
+| `k=0.10` | 51 | +0.1380 |
+| `k=0.30` | 62 | +0.1385 |
+
+</div>
+
+**`k=0.30`'s 62 disagreements are a strict superset of `k=0.10`'s 51: all
+51 persist unchanged, plus 11 new ones -- zero states got fixed by moving
+from `k=0.10` to `k=0.30`.** The higher mean weighted_success_rate that
+made `k=0.30` the sweep winner is not explained by resolving more local
+policy/`pi_D*` disagreements; the two checkpoints are functionally tied on
+that front, and `k=0.30`'s is nominally worse.
+
+The 11 new disagreements are not random: their median `q_gap` (0.0188) is
+even smaller than the 51 persistent ones' (0.0428) -- the tightest true
+decisions in the whole dataset, tighter than anything `k=0.10` ever got
+wrong. `k=0.30`'s slower decay keeps the reweighting effect meaningfully
+stronger for longer into training (see "Three ways to exploit the
+pattern" above), which plausibly pushes the policy to keep trying to
+differentiate decisions so close to indifferent that forcing an answer
+either way is close to a coin flip -- occasionally landing on the wrong
+side of ties `k=0.10`'s faster-fading effect never disturbed. The
+near-goal exploration pocket (states 717-719, 747, 749) is absent from
+both the 51 persistent and the 11 new states -- still completely
+untouched by this mechanism regardless of `k`, consistent with it being
+an exploration failure, not an exploitation one (see the scope
+discussion above).
+
+`analyze_disagreement_factors.py` confirms the same dominant mechanism as
+`k=0.10`: `log_pair_min_samples` remains the strongest factor
+(net of coverage: -0.34; net of coverage and prior preference: -0.30),
+essentially unchanged in magnitude from `k=0.10`'s own -0.27/-0.21.
+`analyze_patched_disagreement_states.py` confirms the 62 states are still
+real, exploitable mistakes (+0.1385 weighted, patched `covered` reaching
+0.746 -- the same `pi_D*` ceiling as every other patch validation in this
+project).
+
+**Practical takeaway**: `k=0.30` is a legitimate, validated choice by this
+project's own `mean` criterion, but it is not a strictly better
+configuration at the state level -- it trades a handful of very close
+calls for a smoother trajectory over the rest of training. Anyone
+prioritizing fewer local disagreements over the aggregate `mean` might
+reasonably still prefer `k=0.10`.
 
 ## Project structure
 
