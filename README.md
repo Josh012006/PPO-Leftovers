@@ -1310,6 +1310,73 @@ Best checkpoint: epoch 140, `weighted_success_rate=0.4845`.
 
 ### A more rigorous sweep of the two new hyperparameters : $\beta$ and $k$
 
+The `beta`/`k` search up to this point had a gap: `beta=0.9995` was fixed
+first (chosen from the *constant*-weighting sweep, before KL-anchoring
+existed), then `k` was swept only at that one `beta`. Nothing confirmed
+`beta=0.9995` was still the right anchor once decay against cumulative KL
+-- a mechanism that didn't exist when `beta` was first chosen -- was in
+the loop. This section closes that gap: a full cross-sweep of
+`effective_sample_beta x effective_sample_kl_k`, 6 betas (0.995, 0.999,
+0.9995, 0.9999, 0.99995, 0.99999) x 6 k values (0.02, 0.05, 0.1, 0.2, 0.3,
+0.5) = 36 combinations, all under this project's own KL-anchored decay,
+`eval_seed=999`, selection by `mean` over the run (this project's
+standing criterion throughout).
+
+19 of the first 30 cells (5 betas x 6 k, `beta=0.9995` already covered by
+the earlier k-only sweep) failed outright from a concurrent process
+exhausting memory on the machine they were run on -- not a training or
+code issue -- and were re-run separately in two follow-up batches once
+that process was no longer competing for memory. The table and heatmap
+below merge all three runs into the complete 36-cell grid.
+
+<div align="center">
+<img src="results/phase2/analysis/beta_kl_k_cross_sweep/full_grid_heatmap.png" width="75%"><br><em>mean weighted_success_rate across the full 6x6 beta x k grid. The best cell (beta=0.9995, k=0.30) is outlined in red.</em>
+</div>
+
+<div align="center">
+
+| beta | k | mean | best | final | std |
+|---|---|---|---|---|---|
+| **0.9995** | **0.30** | **0.4357** | 0.4840 | 0.4560 | 0.0679 |
+| 0.999 | 0.02 | 0.4343 | 0.4855 | 0.4475 | 0.0655 |
+| 0.9995 | 0.20 | 0.4310 | 0.4840 | 0.4610 | 0.0708 |
+| 0.99999 | 0.02 | 0.4295 | 0.4850 | 0.4755 | 0.0754 |
+| 0.9995 | 0.10 | 0.4289 | 0.4845 | 0.4705 | 0.0679 |
+
+</div>
+
+Two things stand out. First, `beta=0.999, k=0.02` and `beta=0.99999,
+k=0.02` both come close to the winner -- but each is an isolated spike:
+their own neighbors in the grid (same beta, adjacent k) drop off sharply,
+which is the signature of a value that got lucky under this project's
+single-seed evaluation, not a genuinely robust region. Second,
+`beta=0.9995`'s entire row, by contrast, stays in the 0.42-0.436 band
+across every k from 0.05 to 0.5 -- the widest, most consistently strong
+region in the whole grid, not a single lucky cell. That breadth is a
+better reason to trust `beta=0.9995` than the fact that its best cell
+happens to be the single highest number.
+
+**`beta=0.9995` was already the right anchor -- the wider search confirms
+it rather than replacing it.** What it does change is `k`: `k=0.30` beats
+the previously-reported `k=0.10` (0.4357 vs. 0.4289 mean, +1.6% relative),
+consistent with the smaller, focused k-only sweep this project ran before
+committing to a full cross-sweep.
+
+### New best configuration (updated)
+
+Same as before except `effective_sample_kl_k=0.30` (was `0.10`):
+`clip_eps=0.55, gae_lambda=0.90, entropy_coef=0.0, value_coef=1.0,
+max_grad_norm=0.1, use_effective_sample_weighting=true,
+effective_sample_beta=0.9995, effective_sample_kl_anchor=true,
+effective_sample_kl_k=0.30`.
+
+This configuration has not yet been run with `--save-all-checkpoints`, so
+there is no saved checkpoint for it yet, no per-epoch weighted_success_
+rate curve, and no disagreement-state analysis (the sweep run above only
+records the aggregate mean/best/final, not every epoch's checkpoint).
+That run -- identical in spirit to the one that produced the `k=0.10`
+checkpoint documented above -- is the natural next step before treating
+`k=0.30` as the configuration to build on further.
 
 ## Project structure
 
