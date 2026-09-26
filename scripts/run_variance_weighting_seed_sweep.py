@@ -13,7 +13,7 @@ found more ensemble heads reduces that seed-to-seed noise (median
 coefficient of variation in per-transition variance across seeds: 0.449
 at 5 heads, 0.295 at 15 heads, on a 20k-transition subsample) -- this
 sweep tests that properly, at full scale, across ensemble_n_heads in
-{5, 10, 15} x 5 seeds = 15 runs, and reports the full mean/best/final
+{5, 10, 12, 15} x 5 seeds = 20 runs, and reports the full mean/best/final
 distribution per head-count so a real decision (is K=15 enough? do we
 need more?) can be made from data, not a single anecdote.
 
@@ -46,7 +46,7 @@ Usage:
         --start-tiers-config configs/phase2/start_tiers.yaml \
         --dataset results/phase2/dataset_D.pkl \
         --prior-checkpoint results/phase2/prior_checkpoint.pt \
-        --seeds 0 1 2 3 4 --ensemble-n-heads-list 5 10 15 \
+        --seeds 0 1 2 3 4 --ensemble-n-heads-list 5 10 12 15 \
         --checkpoint-every 5 --eval-episodes 500 --eval-seed 999 \
         --out-dir results/phase2/analysis/variance_weighting_seed_sweep \
         --cpu-count 4
@@ -156,7 +156,7 @@ def main():
     parser.add_argument("--dataset", required=True)
     parser.add_argument("--prior-checkpoint", required=True)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
-    parser.add_argument("--ensemble-n-heads-list", type=int, nargs="+", default=[5, 10, 15])
+    parser.add_argument("--ensemble-n-heads-list", type=int, nargs="+", default=[5, 10, 12, 15])
     parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--minibatch-size", type=int, default=256)
     parser.add_argument("--clip-eps", type=float, default=0.55)
