@@ -17,6 +17,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import copy
 from pathlib import Path
 
 import numpy as np
@@ -53,11 +54,23 @@ def main():
     parser.add_argument("--eval-seed", type=int, default=999)
     parser.add_argument("--seed", type=int, default=0)
     parser.add_argument("--quiet", action="store_true", help="Suppress the per-epoch training log (policy/value loss, entropy, KL) between evaluation checkpoints.")
+    parser.add_argument(
+        "--save-best-checkpoint", action="store_true",
+        help="Save the checkpoint with the highest observed weighted_success_rate to <out-dir>/best_config_checkpoint.pt "
+        "-- same filename/payload convention as analyze_policy_agreement.py, so scripts/analyze_disagreement_factors.py "
+        "and scripts/analyze_patched_disagreement_states.py can be pointed at it unchanged.",
+    )
+    parser.add_argument(
+        "--save-all-checkpoints", action="store_true",
+        help="Additionally save EVERY evaluated checkpoint to <out-dir>/all_checkpoints/checkpoint_epoch_<N>.pt.",
+    )
     parser.add_argument("--out-dir", default="results/phase2/analysis/direct_variance_weighted")
     args = parser.parse_args()
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
+    if args.save_all_checkpoints:
+        (out_dir / "all_checkpoints").mkdir(parents=True, exist_ok=True)
 
     env_cfg = MazeEnvConfig.from_yaml(args.env_config)
     env = StochasticMazeEnv(
@@ -90,6 +103,7 @@ def main():
     )
 
     results = []
+    best_tracker = {"weighted_success_rate": -1.0, "epoch": None, "state_dict": None}
 
     def eval_cb(epoch, net, summary):
         r = evaluate_policy_weighted(
@@ -99,7 +113,45 @@ def main():
         results.append({"epoch": epoch, **r})
         print(f"  epoch {epoch:4d}: weighted={r['weighted_success_rate']:.4f}")
 
+        if args.save_all_checkpoints:
+            torch.save(
+                {
+                    "state_dict": copy.deepcopy(net.state_dict()),
+                    "epoch": epoch,
+                    "weighted_success_rate": r["weighted_success_rate"],
+                    "success_rate_overall": r["overall"]["success_rate"],
+                    "success_rate_covered": r["covered"]["success_rate"],
+                    "success_rate_held_out": r["held_out"]["success_rate"],
+                    "obs_dim": dataset.obs_dim,
+                    "n_actions": dataset.n_actions,
+                    "hidden_sizes": cfg.hidden_sizes,
+                },
+                out_dir / "all_checkpoints" / f"checkpoint_epoch_{epoch}.pt",
+            )
+
+        if args.save_best_checkpoint and r["weighted_success_rate"] > best_tracker["weighted_success_rate"]:
+            best_tracker["weighted_success_rate"] = r["weighted_success_rate"]
+            best_tracker["epoch"] = epoch
+            best_tracker["state_dict"] = copy.deepcopy(net.state_dict())
+
     trainer.train(verbose=not args.quiet, eval_every_epochs=args.checkpoint_every, eval_callback=eval_cb)
+
+    if args.save_best_checkpoint and best_tracker["state_dict"] is not None:
+        torch.save(
+            {
+                "state_dict": best_tracker["state_dict"],
+                "epoch": best_tracker["epoch"],
+                "weighted_success_rate": best_tracker["weighted_success_rate"],
+                "obs_dim": dataset.obs_dim,
+                "n_actions": dataset.n_actions,
+                "hidden_sizes": cfg.hidden_sizes,
+            },
+            out_dir / "best_config_checkpoint.pt",
+        )
+        print(
+            f"Saved best-observed checkpoint (epoch {best_tracker['epoch']}, "
+            f"weighted_success_rate={best_tracker['weighted_success_rate']:.4f}) to {out_dir / 'best_config_checkpoint.pt'}"
+        )
 
     df = pd.DataFrame(results)
     df.to_csv(out_dir / "direct_variance_weighted.csv", index=False)
