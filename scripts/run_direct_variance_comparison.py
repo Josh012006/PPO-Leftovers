@@ -29,6 +29,7 @@ from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.eval.evaluate import evaluate_policy_weighted, get_tier_start_lists
 from ppo_exploitation.ppo.fixed_d_trainer_variance_weighted import DirectVarianceWeightedTrainer
 from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams, StartTierConfig
+from ppo_exploitation.utils.seeding import set_global_seed
 
 
 def main():
@@ -66,6 +67,7 @@ def main():
     )
     parser.add_argument("--out-dir", default="results/phase2/analysis/direct_variance_weighted")
     args = parser.parse_args()
+    set_global_seed(args.seed)
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
