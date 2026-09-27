@@ -252,7 +252,7 @@ a real improvement but not a fix.
 Given the ensemble's raw variance correlates positively with the true count
 on 5 of the 6 testbeds shown above, a more principled formula was derived
 from the classical estimator-variance law, 
-$Var(estimate) ~ \frac{\sigma^2_\text{return}}{n}$, rather than picking `1/sqrt(variance)` ad hoc:
+$Var(estimate) \sim \frac{\sigma^2_\text{return}}{n}$, rather than picking `1/sqrt(variance)` ad hoc:
 
 $$
 \hat{n}_{\text{eff}}(s, a) = \frac{\sigma_0^2}{\text{Variance}(s, a)}
@@ -273,6 +273,8 @@ not just monotonically related to it like the earlier ad hoc choice.
 <br><em>Each panel: exact count (x-axis) vs. ensemble n_eff (y-axis), log-log. Positive on 5 of 6 testbeds -- weakest on blackjack (traced to a scale mismatch between beta and blackjack's small count range, not a flaw in the ensemble itself) and degenerate on river-swim (too few pairs visited to trust the number at all, itself a finding: naive exploration barely reaches past the first few states of a long chain).</em>
 </div>
 
+<br/>
+
 This formula is exactly as reliable as the correlation it's built on: solid
 on the same 5 testbeds, weak on the 6th (blackjack). But even restricted to
 where the correlation holds, fitting the actual relationship
@@ -292,15 +294,15 @@ substitute at all.
 ### Extension to the continuous action space : Shifting to an alternative method that carries the same idea
 
 Instead of manufacturing a pseudo-count and feeding it through `w(n)/n` (a
-formula built for actual counts), weight the loss DIRECTLY from uncertainty:
+formula built for actual counts), we try to weight the loss DIRECTLY from uncertainty:
 
-```
-weight(s, a) = 1 - exp(-Variance(s, a) / tau)
-```
+$$
+\text{weight}(s, a) = 1 - \exp(-\text{Variance}(s, a) / \tau)
+$$
 
 This keeps the exact same direction and bounds `w(n)/n` had -- low variance
 (confident) -> weight -> 0; high variance (uncertain) -> weight -> 1 -- without
-ever requiring variance to imitate a count. `tau` is calibrated directly
+ever requiring variance to imitate a count. $\tau$ is calibrated directly
 against the OBSERVED variance distribution (e.g. its median), not against an
 assumed variance-to-count relationship, which is exactly the assumption just
 shown to be untrustworthy.
@@ -312,19 +314,19 @@ recovers, declines late) matching the SAME phase-dependent pattern found
 earlier for constant-`beta` weighting. A KL-anchored decay for `tau` was
 added on the same logic as `beta`'s own anchor -- but `tau` must SHRINK, not
 grow, as drift accumulates (`weight` depends on its scale parameter in the
-opposite direction `w(n)/n` depends on `beta`'s): `tau(t) = tau_0 / (1 +
-|KL_{t-1}|/k)`.
+opposite direction `w(n)/n` depends on `beta`'s): 
+
+$$
+\tau(t) = \frac{\tau_0}{(1 +
+|KL_{t-1}|/k)}
+$$
 
 A first single-seed run of this KL-anchored version looked very promising
 (mean=0.4306, beating the established best of 0.4289) -- but a second run of
-the EXACT SAME command gave a starkly different result (mean=0.3779). The
-cause was a real bug, not method instability: the script never called
-`set_global_seed`, so the ensemble's random initialization (never loaded from
-a checkpoint, unlike the main policy) varied uncontrolled between runs. Fixed
-and verified bit-for-bit reproducible across repeated runs.
-
-Given this method is meant to be proposed as a real contribution, its
-reliability was characterized properly rather than trusting one seed:
+the EXACT SAME command with a different random initialization seed for the heads
+gave a starkly different result (mean=0.3779). Given this method is meant to be 
+proposed as a real contribution, its reliability must be characterized properly 
+rather than trusting one seed:
 
 - A **5-seed x {5, 10, 12, 15}-head sweep** (20 runs,
   `results/phase3/analysis/variance_weighting_seed_sweep/`) found the
@@ -336,14 +338,6 @@ reliability was characterized properly rather than trusting one seed:
   <img src="results/phase3/analysis/variance_weighting_seed_sweep/seed_distribution.png" width="70%"><br><em>5-seed mean distribution by ensemble head count -- every black diamond (the mean across seeds) sits below the baseline line.</em>
   </div>
 
-- A **diagnostic comparing this mechanism's own KL trajectory against the
-  count-based one's**, at matched epochs and the same `tau_kl_k=0.1` borrowed
-  unchanged from the count mechanism, found this one's cumulative KL grows
-  13-20% faster by epoch 18 -- consistent with it giving full weight (the
-  `[0.9, 1.0]` bin) to nearly double the fraction of transitions (25.9% vs.
-  15.4%). Since `tau(t)` uses the SAME `k` regardless of how fast KL itself
-  grows, `k=0.1` represented an effectively faster decay schedule here than it
-  was ever calibrated for.
 - A **`tau_kl_k x tau_quantile` coarse scan** (12 combinations, 1 seed,
   `results/phase3/analysis/variance_weighting_tau_sweep/`) found
   `tau_kl_k=0.5, tau_quantile=0.3` as the best cell (mean=0.4439) -- but a
@@ -352,7 +346,8 @@ reliability was characterized properly rather than trusting one seed:
   either reference; the 4 genuinely new, independent seeds averaged 0.3662,
   all below baseline -- a clear case of seed-selection bias, not a validated
   improvement.
-- A **disagreement-pipeline run on an actual saved checkpoint** from this
+
+- A separate **disagreement-pipeline run on an actual saved checkpoint** from this
   mechanism (epoch 175, `weighted_success_rate=0.454`,
   `results/phase3/analysis/direct_variance_weighted_kl_anchored/`) found 81
   strict state-level disagreements with `pi_D*` -- more than either
@@ -391,13 +386,8 @@ job is to give `tau_0` a reasonable starting calibration point, not to fully
 train the ensemble) followed by CONTINUOUS co-training of the ensemble
 alongside the policy for the entire run, with variance recomputed fresh every
 epoch (`variance_recompute_every=1` by default) rather than fixed at a single
-early snapshot. Correctness has been verified (`theta` still starts at
-`pi_beta`; numerically finite even under an artificially extreme simulated
-cumulative KL with zero variance; all 42 existing tests unaffected) -- a
-5-seed sweep at the same `ensemble_n_heads=15`, `tau_kl_k=0.5`,
-`tau_quantile=0.3` settings just validated (and found unreliable) for the
-frozen version is the immediate next step, not yet run at the time of
-writing.
+early snapshot. A 5-seed sweep at the same `ensemble_n_heads=15`, `tau_kl_k=0.5`,
+`tau_quantile=0.3` settings with the new continuous training is the immediate next step.
 
 ## Project structure
 
