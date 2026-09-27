@@ -555,10 +555,9 @@ claim made above.
   according to the effective number of samples in each class.
 - Osband, I., Blundell, C., Pritzel, A., & Van Roy, B. (2016). *Deep
   Exploration via Bootstrapped DQN.* arXiv:1602.04621 (NeurIPS 2016).
-  [arxiv.org/abs/1602.04621](https://arxiv.org/abs/1602.04621) — proposed
-  alternative to RND for the same purpose: an ensemble of value heads
-  whose disagreement, rather than a separate predictor network's error,
-  serves as the confidence signal.
+  [arxiv.org/abs/1602.04621](https://arxiv.org/abs/1602.04621) — used as a representative
+  of the exact count method with CB loss in the continuous and high dimension space :
+  an ensemble of value heads whose disagreement serves as the confidence signal.
 
 **Implementation verification reference**
 
