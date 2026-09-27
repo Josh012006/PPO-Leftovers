@@ -219,33 +219,218 @@ continuous action space. As said previously, we can't use the exact count when w
 
 #### Trying to find a proxy for the exact count
 
-- **A small critic ensemble's disagreement** (variance across
-  independently-initialized heads regressing the same GAE returns)
-  correlates with the true count on 5 of 6 deliberately independent
-  testbeds (this project's own maze, a fresh layout, FrozenLake, Taxi,
-  Blackjack) -- but the *functional relationship* between that variance
-  and the true count is not a stable law: an empirically fit power-law
-  exponent ranged from `-0.55` to `-1.54` across three testbeds, an
-  artifact of network capacity and training duration, not a fixed
-  statistical property.
-- **Random Network Distillation** was checked against the same testbeds
-  and showed the identical instability, for the same underlying reason:
-  the issue is intrinsic to any signal built by training a network via
-  gradient descent to convergence on fixed data, not particular to
-  ensembles.
-- **Bellemare et al. (2016)'s density-based pseudo-count** -- which needs
-  no sample count at all -- was implemented and tested; it correlates
-  only weakly with the true count and is highly sensitive to an arbitrary
-  "recoding" learning rate with no principled default, reproducing the
-  same kind of instability under a different mechanism.
-- **A direct reformulation abandoning the pseudo-count idea entirely** --
-  `weight(s,a) = 1 - exp(-Variance(s,a)/tau)`, no beta, no count-shaped
-  intermediate quantity -- was implemented last. Its first full-run test
-  (constant `tau`) underperformed the established baseline outright; a
-  KL-anchored decay for `tau` (shrinking rather than growing, since
-  `weight` depends on its scale parameter in the opposite direction
-  `w(n)/n` depends on `beta`'s) has been implemented but not yet evaluated
-  on a full run.
+**A small critic ensemble's disagreement.** `K` independent, randomly-initialized
+critic heads (`CriticEnsemble`, no shared trunk -- this project's networks are
+tiny enough that the compute savings a shared trunk buys don't matter, and
+independence avoids homogenizing the heads' representations) each regress the
+same GAE returns fixed-`D` PPO's own critic already targets, via a masked MSE
+that only updates a head's output at the action actually taken -- mirroring
+Bootstrapped DQN (Osband et al., 2016, arXiv:1602.04621), whose own Appendix D.3
+found diversity from random initialization alone was enough, without any
+bootstrap sub-sampling (this project follows that simplification). The
+per-transition VARIANCE across heads, at the action taken, is then the raw
+signal `n_eff` is built from.
+
+The first formula tried was `n_eff = 1/sqrt(variance)`, not the more obvious
+`1/variance` -- an empirical check found plain `1/variance` blows up under
+overfitting (training the SAME ensemble longer inflated its mean by ~64x
+between 20 and 400 epochs on a testbed with NO real uncertainty to find,
+verified against the true exact count); the square root damped this to ~9x,
+a real improvement but not a fix.
+
+A **statistical threshold** was added on top: pool the variance of the
+lowest-`quantile` fraction of `(state, action)` pairs as a noise-floor
+reference (`sigma0_sq`), then run an F-test per pair against it, so only
+pairs whose variance is significantly above that floor get a real `n_eff` --
+everything else is treated as "typical of the reference group." Two real bugs
+surfaced and were fixed here, not just tuned around:
+- The first version forced non-significant pairs to a fixed neutral constant
+  (chosen so the loss-weight multiplier would equal exactly 1). This was
+  backwards: the reference group is the LOW-variance, HIGH-confidence,
+  naturally LOW-weight end of the distribution in most real datasets, so
+  pinning it to weight=1 pushed those pairs' weight UP, not toward neutral --
+  and produced a NEGATIVE correlation between this signal's resulting weight
+  and the exact-count-based weight on this project's own maze (Spearman
+  -0.58) despite the RAW signal correlating at +0.71. Fixed by using the
+  reference group's own typical confidence (`1/sqrt(sigma0_sq)`) instead of an
+  arbitrary constant.
+- An under-sized reference group -- picking the bottom 20% of pairs when the
+  TOTAL pair count is small (12 pairs on one testbed, giving a 2-pair
+  reference group) systematically UNDERESTIMATES the noise floor via
+  order-statistic bias, flagging 7-10 of 12 pairs "significant" even though
+  none had genuine excess uncertainty. Fixed with an absolute minimum
+  reference-group size, falling back to "treat every pair as equally
+  (un)confident" when even that minimum can't be met from the data available.
+
+A more principled derivation was then tried: the classical estimator-variance
+law `Var(estimate) ~ sigma^2_return / n` implies `n_eff = sigma0_sq /
+Variance(pair)` (proportional to the true count), not `1/sqrt(variance)`. A
+controlled 2x2 test (formula `{sqrt, sigma0/variance}` x gating
+`{ungated, gated}`) found Spearman correlation is IDENTICAL between the two
+formulas on every testbed checked -- expected, since both are monotonic
+transforms of the same variance ranking -- and Pearson correlation on the
+resulting LOSS WEIGHT is mixed: the "corrected" formula helps on 2 of 3
+testbeds (this project's maze, FrozenLake) and hurts on the third
+(Blackjack), never a decisive win either way.
+
+**The reason turned out to be deeper than the formula.** Fitting the actual
+empirical relationship (`log(variance)` regressed on `log(true count)`) gave
+slopes of `-0.551` (this project's maze), `-1.275` (Blackjack), and `-1.539`
+(FrozenLake) -- nowhere near the classical `-1` the `sigma0/variance`
+derivation assumes, AND highly testbed-dependent. `Var(estimate) ~
+sigma^2/n` describes a simple i.i.d. sample MEAN; a neural-network ensemble
+trained by SGD is not that estimator -- its convergence rate for a given
+`(state, action)` pair depends on network capacity, learning rate, training
+duration, and how much it generalizes from nearby, better-covered inputs,
+none of which the classical law accounts for. This is why no single formula
+(nor a single calibration of one) reliably worked across testbeds: there
+isn't one fixed law to calibrate against.
+
+**Random Network Distillation** (Burda et al., 2018, arXiv:1810.12894) was
+checked next, specifically to test whether a DIFFERENT mechanism (novelty via
+prediction error against a fixed random target, rather than ensemble
+disagreement) would show a more stable exponent. The same empirical-exponent
+methodology, on the same three testbeds, gave `-0.352`, `-1.081`, `-0.321` --
+a slightly narrower range than the ensemble's (0.760 vs. 0.988) but still
+substantially unstable, with a WEAKER average fit quality (mean R^2 0.37 vs.
+0.59). The instability is intrinsic to any signal built by training a network
+via gradient descent to convergence on fixed data -- not particular to
+ensembles.
+
+**Bellemare et al. (2016)'s density-based pseudo-count** (arXiv:1606.01868)
+was tried last among the proxies, specifically because it needs no sample
+count at all, even for its own construction -- a small autoregressive
+density model (a GRU reading the concatenated one-hot `(obs, action)` vector
+bit by bit) is trained via MLE, and a pseudo-count is derived from the
+"recoding probability": `N_hat(x) = rho(x)(1 - rho'(x)) / (rho'(x) - rho(x))`,
+where `rho'(x)` is the model's density for `x` after ONE additional gradient
+step on `x` alone. Tested on FrozenLake: Spearman correlation with the true
+count was `0.439` at a recoding learning rate of `1e-3`, but collapsed to
+`0.053` -- an order of magnitude weaker -- at `1e-4`, a purely arbitrary
+hyperparameter with no principled default; 5 of 44 pairs even produced an
+invalid (negative or undefined) pseudo-count from the formula's denominator
+going unstable. This reproduces the same kind of arbitrary-hyperparameter-
+driven instability under a different mechanism, not a clean escape from it.
+
+**None of the three proxies gave a signal whose relationship to the true
+count was stable enough to trust one calibration across tasks or training
+configurations** -- correlations in the 6-testbed study
+(`results/phase3/analysis/n_eff_correlation/`) ranged from essentially zero
+(Blackjack, before a scale mismatch with `beta` was diagnosed) to near-perfect
+(RiverSwim, on a testbed later found too small -- only 3 visited pairs -- to
+trust that number at all), and the exponent-instability findings above show
+this isn't fixable by better tuning. This is why the project stopped trying
+to make anything COUNT-LIKE and moved to a method that doesn't need to.
+
+#### Shifting to an alternative method that carries the same idea
+
+Instead of manufacturing a pseudo-count and feeding it through `w(n)/n` (a
+formula built for actual counts), weight the loss DIRECTLY from uncertainty:
+
+```
+weight(s, a) = 1 - exp(-Variance(s, a) / tau)
+```
+
+This keeps the exact same direction and bounds `w(n)/n` had -- low variance
+(confident) -> weight -> 0; high variance (uncertain) -> weight -> 1 -- without
+ever requiring variance to imitate a count. `tau` is calibrated directly
+against the OBSERVED variance distribution (e.g. its median), not against an
+assumed variance-to-count relationship, which is exactly the assumption just
+shown to be untrustworthy.
+
+**`DirectVarianceWeightedTrainer`** (frozen ensemble, constant `tau`): the
+first full-run test underperformed the established baseline outright
+(mean=0.3844 vs. 0.4127), with a trajectory (rises early, dips mid-run,
+recovers, declines late) matching the SAME phase-dependent pattern found
+earlier for constant-`beta` weighting. A KL-anchored decay for `tau` was
+added on the same logic as `beta`'s own anchor -- but `tau` must SHRINK, not
+grow, as drift accumulates (`weight` depends on its scale parameter in the
+opposite direction `w(n)/n` depends on `beta`'s): `tau(t) = tau_0 / (1 +
+|KL_{t-1}|/k)`.
+
+A first single-seed run of this KL-anchored version looked very promising
+(mean=0.4306, beating the established best of 0.4289) -- but a second run of
+the EXACT SAME command gave a starkly different result (mean=0.3779). The
+cause was a real bug, not method instability: the script never called
+`set_global_seed`, so the ensemble's random initialization (never loaded from
+a checkpoint, unlike the main policy) varied uncontrolled between runs. Fixed
+and verified bit-for-bit reproducible across repeated runs.
+
+Given this method is meant to be proposed as a real contribution, its
+reliability was characterized properly rather than trusting one seed:
+
+- A **5-seed x {5, 10, 12, 15}-head sweep** (20 runs,
+  `results/phase3/analysis/variance_weighting_seed_sweep/`) found the
+  mean-of-means BELOW baseline for every head count (0.3886, 0.3612, 0.3775,
+  0.3957) -- only 1-2 of 5 seeds per head count beat baseline, and more heads
+  did not help monotonically (`K=10` was worse than `K=5`).
+
+  <div align="center">
+  <img src="results/phase3/analysis/variance_weighting_seed_sweep/seed_distribution.png" width="70%"><br><em>5-seed mean distribution by ensemble head count -- every black diamond (the mean across seeds) sits below the baseline line.</em>
+  </div>
+
+- A **diagnostic comparing this mechanism's own KL trajectory against the
+  count-based one's**, at matched epochs and the same `tau_kl_k=0.1` borrowed
+  unchanged from the count mechanism, found this one's cumulative KL grows
+  13-20% faster by epoch 18 -- consistent with it giving full weight (the
+  `[0.9, 1.0]` bin) to nearly double the fraction of transitions (25.9% vs.
+  15.4%). Since `tau(t)` uses the SAME `k` regardless of how fast KL itself
+  grows, `k=0.1` represented an effectively faster decay schedule here than it
+  was ever calibrated for.
+- A **`tau_kl_k x tau_quantile` coarse scan** (12 combinations, 1 seed,
+  `results/phase3/analysis/variance_weighting_tau_sweep/`) found
+  `tau_kl_k=0.5, tau_quantile=0.3` as the best cell (mean=0.4439) -- but a
+  5-seed validation of that SAME combination gave a mean of 0.3818 across all
+  5 seeds. The scan's own seed (seed 0) was the only one of the 5 that beat
+  either reference; the 4 genuinely new, independent seeds averaged 0.3662,
+  all below baseline -- a clear case of seed-selection bias, not a validated
+  improvement.
+- A **disagreement-pipeline run on an actual saved checkpoint** from this
+  mechanism (epoch 175, `weighted_success_rate=0.454`,
+  `results/phase3/analysis/direct_variance_weighted_kl_anchored/`) found 81
+  strict state-level disagreements with `pi_D*` -- more than either
+  count-based configuration (51 at `k=0.10`, 62 at `k=0.30`) -- though driven
+  by the identical dominant factor (`log_pair_min_samples`, net of coverage
+  and prior preference: `-0.41`, comparable in kind to `-0.21` at `k=0.10` and
+  `-0.34` at `k=0.30`) in every case. Patch validation still confirms these
+  are real, exploitable mistakes (delta +0.195, larger than either count-based
+  configuration's), not noise.
+
+  <div align="center">
+  <img src="results/phase3/analysis/direct_variance_weighted_kl_anchored/policy_agreement_maze_map.png" width="48%">
+  <img src="results/phase3/analysis/direct_variance_weighted_kl_anchored/disagreement_factors/disagreement_factors_bars.png" width="48%"><br><em>Left: disagreement severity map for this checkpoint (same layout/legend as every other disagreement map in this project). Right: the same dominant factor as every other configuration checked.</em>
+  </div>
+
+  <div align="center">
+  <img src="results/phase3/analysis/direct_variance_weighted_kl_anchored/patched_disagreement_states_comparison.png" width="60%"><br><em>Patching pi_D*'s action into all 81 disagreement states: +0.195 weighted_success_rate -- these are still real, exploitable mistakes.</em>
+  </div>
+
+**Current direction: co-train the ensemble continuously instead of freezing
+it.** A concrete hypothesis for WHY the frozen-ensemble version is unstable:
+the critic ensemble trains for a short, ISOLATED burst (`ensemble_epochs=30`)
+BEFORE the main 300-epoch policy loop even starts, then its variance is
+FROZEN for the rest of the run (only `tau`'s KL-anchored decay changes
+afterward, never the underlying variance) -- giving independently-initialized
+heads far less total gradient exposure to converge past their own random-init
+noise than the 300 epochs the main policy itself gets. This is a direct,
+literature-grounded parallel to Randomized Ensembled Double Q-Learning (REDQ;
+Chen, Wang, Zhou & Ross, 2021, arXiv:2101.05982), whose own critic ensemble is
+never pre-trained-then-frozen -- it is updated every single gradient step
+alongside the policy, for the entire run.
+
+`ContinuousEnsembleVarianceWeightedTrainer` implements this: a SHORT initial
+warm-up (`ensemble_warmup_epochs=10`, down from 30, since its only remaining
+job is to give `tau_0` a reasonable starting calibration point, not to fully
+train the ensemble) followed by CONTINUOUS co-training of the ensemble
+alongside the policy for the entire run, with variance recomputed fresh every
+epoch (`variance_recompute_every=1` by default) rather than fixed at a single
+early snapshot. Correctness has been verified (`theta` still starts at
+`pi_beta`; numerically finite even under an artificially extreme simulated
+cumulative KL with zero variance; all 42 existing tests unaffected) -- a
+5-seed sweep at the same `ensemble_n_heads=15`, `tau_kl_k=0.5`,
+`tau_quantile=0.3` settings just validated (and found unreliable) for the
+frozen version is the immediate next step, not yet run at the time of
+writing.
 
 ## Project structure
 
