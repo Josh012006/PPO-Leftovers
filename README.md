@@ -209,15 +209,13 @@ bit-identical, so "how many times was this pair observed" stops meaning
 anything. The goal of phase 3 will be to search for a substitute.
 
 
-### Extension to the continuous action space
-
 I decided to start by searching a way to extend our new weighting mecanism to the
 continuous action space. As said previously, we can't use the exact count when we have continuous
 `(state, action)` pairs. So we will either have to find a proxy for the exact count (something that
  correlates with it in the appropriate way and is still valid in continuous space) or we will have
  to design a new method that carries the same idea as our discovered weigthing method.
 
-#### Trying to find a proxy for the exact count
+### Extension to the continuous action space : Trying to find a proxy for the exact count
 
 **A small critic ensemble's disagreement.** `K` independent, randomly-initialized
 critic heads (`CriticEnsemble`, no shared trunk -- this project's networks are
@@ -322,7 +320,7 @@ trust that number at all), and the exponent-instability findings above show
 this isn't fixable by better tuning. This is why the project stopped trying
 to make anything COUNT-LIKE and moved to a method that doesn't need to.
 
-#### Shifting to an alternative method that carries the same idea
+### Extension to the continuous action space : Shifting to an alternative method that carries the same idea
 
 Instead of manufacturing a pseudo-count and feeding it through `w(n)/n` (a
 formula built for actual counts), weight the loss DIRECTLY from uncertainty:
