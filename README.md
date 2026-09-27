@@ -218,16 +218,29 @@ continuous action space. As said previously, we can't use the exact count when w
 ### Extension to the continuous action space : Trying to find a proxy for the exact count
 
 **A small critic ensemble's disagreement.** `K` independent, randomly-initialized
-critic heads (`CriticEnsemble`, no shared trunk -- this project's networks are
-tiny enough that the compute savings a shared trunk buys don't matter, and
-independence avoids homogenizing the heads' representations) each regress the
-same GAE returns fixed-`D` PPO's own critic already targets, via a masked MSE
+critic heads each regress the same GAE returns fixed-`D` PPO's own critic already targets, via a masked MSE
 that only updates a head's output at the action actually taken -- mirroring
-Bootstrapped DQN (Osband et al., 2016, arXiv:1602.04621), whose own Appendix D.3
-found diversity from random initialization alone was enough, without any
-bootstrap sub-sampling (this project follows that simplification). The
-per-transition VARIANCE across heads, at the action taken, is then the raw
+Bootstrapped DQN (Osband et al., 2016, arXiv:1602.04621). The
+per-transition **VARIANCE** across heads, at the action taken, is then the raw
 signal `n_eff` is built from.
+
+**Validated on six deliberately independent testbeds**
+(`results/phase3/analysis/n_eff_correlation/`), not just this project's own
+maze, specifically to check whether the correlation is a general property of
+ensemble disagreement or an artifact of this project's own environment:
+
+<div align="center">
+
+| testbed | transitions | pairs | Spearman(`n_eff`, true count) |
+|---|---|---|---|
+| current-maze | 399,490 | 1,165 | 0.666 |
+| new-maze-layout (fresh layout) | 473,193 | 261 | 0.731 |
+| frozen-lake | 55,791 | 44 | 0.537 |
+| taxi | 100,000 | 1,256 | 0.322 |
+| blackjack | 11,338 | 496 | 0.031 |
+| river-swim | 160,000 | 3 | 1.000 (degenerate -- only 3 pairs ever visited, not a trustworthy number) |
+
+</div>
 
 The first formula tried was `n_eff = 1/sqrt(variance)`, not the more obvious
 `1/variance` -- an empirical check found plain `1/variance` blows up under
@@ -236,89 +249,45 @@ between 20 and 400 epochs on a testbed with NO real uncertainty to find,
 verified against the true exact count); the square root damped this to ~9x,
 a real improvement but not a fix.
 
-A **statistical threshold** was added on top: pool the variance of the
-lowest-`quantile` fraction of `(state, action)` pairs as a noise-floor
-reference (`sigma0_sq`), then run an F-test per pair against it, so only
-pairs whose variance is significantly above that floor get a real `n_eff` --
-everything else is treated as "typical of the reference group." Two real bugs
-surfaced and were fixed here, not just tuned around:
-- The first version forced non-significant pairs to a fixed neutral constant
-  (chosen so the loss-weight multiplier would equal exactly 1). This was
-  backwards: the reference group is the LOW-variance, HIGH-confidence,
-  naturally LOW-weight end of the distribution in most real datasets, so
-  pinning it to weight=1 pushed those pairs' weight UP, not toward neutral --
-  and produced a NEGATIVE correlation between this signal's resulting weight
-  and the exact-count-based weight on this project's own maze (Spearman
-  -0.58) despite the RAW signal correlating at +0.71. Fixed by using the
-  reference group's own typical confidence (`1/sqrt(sigma0_sq)`) instead of an
-  arbitrary constant.
-- An under-sized reference group -- picking the bottom 20% of pairs when the
-  TOTAL pair count is small (12 pairs on one testbed, giving a 2-pair
-  reference group) systematically UNDERESTIMATES the noise floor via
-  order-statistic bias, flagging 7-10 of 12 pairs "significant" even though
-  none had genuine excess uncertainty. Fixed with an absolute minimum
-  reference-group size, falling back to "treat every pair as equally
-  (un)confident" when even that minimum can't be met from the data available.
+Given the ensemble's raw variance correlates positively with the true count
+on 5 of the 6 testbeds shown above, a more principled formula was derived
+from the classical estimator-variance law, 
+$Var(estimate) ~ \frac{\sigma^2_\text{return}}{n}$, rather than picking `1/sqrt(variance)` ad hoc:
 
-A more principled derivation was then tried: the classical estimator-variance
-law `Var(estimate) ~ sigma^2_return / n` implies `n_eff = sigma0_sq /
-Variance(pair)` (proportional to the true count), not `1/sqrt(variance)`. A
-controlled 2x2 test (formula `{sqrt, sigma0/variance}` x gating
-`{ungated, gated}`) found Spearman correlation is IDENTICAL between the two
-formulas on every testbed checked -- expected, since both are monotonic
-transforms of the same variance ranking -- and Pearson correlation on the
-resulting LOSS WEIGHT is mixed: the "corrected" formula helps on 2 of 3
-testbeds (this project's maze, FrozenLake) and hurts on the third
-(Blackjack), never a decisive win either way.
+$$
+\hat{n}_{\text{eff}}(s, a) = \frac{\sigma_0^2}{\text{Variance}(s, a)}
+$$
 
-**The reason turned out to be deeper than the formula.** Fitting the actual
-empirical relationship (`log(variance)` regressed on `log(true count)`) gave
-slopes of `-0.551` (this project's maze), `-1.275` (Blackjack), and `-1.539`
-(FrozenLake) -- nowhere near the classical `-1` the `sigma0/variance`
-derivation assumes, AND highly testbed-dependent. `Var(estimate) ~
-sigma^2/n` describes a simple i.i.d. sample MEAN; a neural-network ensemble
-trained by SGD is not that estimator -- its convergence rate for a given
-`(state, action)` pair depends on network capacity, learning rate, training
-duration, and how much it generalizes from nearby, better-covered inputs,
-none of which the classical law accounts for. This is why no single formula
-(nor a single calibration of one) reliably worked across testbeds: there
-isn't one fixed law to calibrate against.
+where $\sigma_0^2$ is the pooled variance of the lowest-variance (most
+confident) pairs, standing in for the intrinsic return noise $\sigma^2_\text{return}$
+-- making `n_eff` come out proportional to the true count by construction,
+not just monotonically related to it like the earlier ad hoc choice.
 
-**Random Network Distillation** (Burda et al., 2018, arXiv:1810.12894) was
-checked next, specifically to test whether a DIFFERENT mechanism (novelty via
-prediction error against a fixed random target, rather than ensemble
-disagreement) would show a more stable exponent. The same empirical-exponent
-methodology, on the same three testbeds, gave `-0.352`, `-1.081`, `-0.321` --
-a slightly narrower range than the ensemble's (0.760 vs. 0.988) but still
-substantially unstable, with a WEAKER average fit quality (mean R^2 0.37 vs.
-0.59). The instability is intrinsic to any signal built by training a network
-via gradient descent to convergence on fixed data -- not particular to
-ensembles.
+<div align="center">
+<img src="results/phase3/analysis/n_eff_correlation/current-maze_n_eff_correlation.png">
+<img src="results/phase3/analysis/n_eff_correlation/new-maze-layout_n_eff_correlation.png">
+<img src="results/phase3/analysis/n_eff_correlation/frozen-lake_n_eff_correlation.png">
+<img src="results/phase3/analysis/n_eff_correlation/taxi_onehot_n_eff_correlation.png">
+<img src="results/phase3/analysis/n_eff_correlation/blackjack_n_eff_correlation.png">
+<img src="results/phase3/analysis/n_eff_correlation/river-swim_n_eff_correlation.png">
+<br><em>Each panel: exact count (x-axis) vs. ensemble n_eff (y-axis), log-log. Positive on 5 of 6 testbeds -- weakest on blackjack (traced to a scale mismatch between beta and blackjack's small count range, not a flaw in the ensemble itself) and degenerate on river-swim (too few pairs visited to trust the number at all, itself a finding: naive exploration barely reaches past the first few states of a long chain).</em>
+</div>
 
-**Bellemare et al. (2016)'s density-based pseudo-count** (arXiv:1606.01868)
-was tried last among the proxies, specifically because it needs no sample
-count at all, even for its own construction -- a small autoregressive
-density model (a GRU reading the concatenated one-hot `(obs, action)` vector
-bit by bit) is trained via MLE, and a pseudo-count is derived from the
-"recoding probability": `N_hat(x) = rho(x)(1 - rho'(x)) / (rho'(x) - rho(x))`,
-where `rho'(x)` is the model's density for `x` after ONE additional gradient
-step on `x` alone. Tested on FrozenLake: Spearman correlation with the true
-count was `0.439` at a recoding learning rate of `1e-3`, but collapsed to
-`0.053` -- an order of magnitude weaker -- at `1e-4`, a purely arbitrary
-hyperparameter with no principled default; 5 of 44 pairs even produced an
-invalid (negative or undefined) pseudo-count from the formula's denominator
-going unstable. This reproduces the same kind of arbitrary-hyperparameter-
-driven instability under a different mechanism, not a clean escape from it.
+This formula is exactly as reliable as the correlation it's built on: solid
+on the same 5 testbeds, weak on the 6th (blackjack). But even restricted to
+where the correlation holds, fitting the actual relationship
+(`log(variance)` regressed on `log(true count)`) gave slopes of `-0.551`,
+`-1.275`, and `-1.539` on three of those testbeds -- nowhere near the `-1`
+the formula above assumes, and different enough from each other that no
+single calibration of it transfers across tasks. 
 
-**None of the three proxies gave a signal whose relationship to the true
-count was stable enough to trust one calibration across tasks or training
-configurations** -- correlations in the 6-testbed study
-(`results/phase3/analysis/n_eff_correlation/`) ranged from essentially zero
-(Blackjack, before a scale mismatch with `beta` was diagnosed) to near-perfect
-(RiverSwim, on a testbed later found too small -- only 3 visited pairs -- to
-trust that number at all), and the exponent-instability findings above show
-this isn't fixable by better tuning. This is why the project stopped trying
-to make anything COUNT-LIKE and moved to a method that doesn't need to.
+A neural-network ensemble trained by SGD simply isn't the i.i.d. sample-mean estimator that law
+describes: its convergence for a given pair depends on network capacity,
+training duration, and generalization from nearby states, none of which a
+fixed exponent can capture. `n_eff` is kept as a fallback signal, not
+discarded, but this instability is why the project's main effort shifts next
+to a method that carries the same idea without needing a count-like
+substitute at all.
 
 ### Extension to the continuous action space : Shifting to an alternative method that carries the same idea
 
