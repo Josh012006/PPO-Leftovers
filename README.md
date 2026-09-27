@@ -163,11 +163,61 @@ peak checkpoints are functionally tied on every aggregate number, so
 `k=0.30`'s only edge is bought at the cost of concrete, checkable
 mistakes `k=0.10` never makes.
 
-**Testing a second hypothesis: does this generalize past exact counts?**
-The exact count this whole mechanism depends on has no equivalent in a
-continuous action space. This phase searched hard for a substitute and
-found a consistent, informative negative result rather than a working
-one:
+This phase led to real findings in terms of possible ameliorations for the PPO 
+algorithm. But all of that can't be useful if not tested on an actual complete run
+and if it isn't extended to the continuous space. That's what the third phase of the 
+project will be investigating.
+
+Full detail on every one of these -- exact numbers, every figure, every
+rejected intermediate idea -- is in
+[docs/PHASE2_CONTROLLED_MAZE.md](docs/PHASE2_CONTROLLED_MAZE.md).
+
+## Phase 3: realistic training and continuous actions
+
+Phase 3 picks up two threads phase 2 closed without
+resolving, and neither is a minor loose end -- each is a genuine
+precondition for treating phase 2's central finding (the
+effective-sample-weighting fix, KL-anchored, `beta=0.9995`, `k=0.10`) as
+more than a result specific to phase 2's own deliberately extreme
+protocol.
+
+**1. Test on a full, realistic training run** 
+Every phase 2 result, without exception, comes from a
+single trust-region window stretched to `epochs=300` against a `pi_old`
+that never moves. Realistic PPO (Stable-Baselines3, CleanRL, and
+effectively every published configuration) instead alternates short
+windows of `E=3` to `10` epochs against a fresh rollout and a refreshed
+`pi_old`, repeated many times over training. The exploitation-gap
+mechanism phase 2 isolated -- an advantage estimate computed once and
+then treated as equally reliable regardless of how many times a given
+`(state, action)` pair was actually seen -- is structurally present in
+that realistic loop too, just diluted across many small windows instead
+of concentrated in a long one. Whether the KL-anchored fix transfers to
+that regime, in what form, and at what strength (the `k` calibrated
+against a 300-epoch window has no established relationship to whatever
+would suit a 5-epoch one) is a real, unanswered empirical question. The
+natural next experiment: instrument a standard multi-window training
+loop, apply the same weighting mechanism at a similarly reduced strength,
+and check whether the same qualitative benefit (fewer exploitable
+state-level disagreements with `pi_D*`, a comparable or better `mean`
+weighted_success_rate) survives the transfer.
+
+**2. Extend the mechanism to continuous action spaces.** The exact
+`(state, action)` count this fix depends on has no equivalent once
+actions are continuous -- two continuous actions are essentially never
+bit-identical, so "how many times was this pair observed" stops meaning
+anything. The goal of phase 3 will be to search for a substitute.
+
+
+### Extension to the continuous action space
+
+I decided to start by searching a way to extend our new weighting mecanism to the
+continuous action space. As said previously, we can't use the exact count when we have continuous
+`(state, action)` pairs. So we will either have to find a proxy for the exact count (something that
+ correlates with it in the appropriate way and is still valid in continuous space) or we will have
+ to design a new method that carries the same idea as our discovered weigthing method.
+
+#### Trying to find a proxy for the exact count
 
 - **A small critic ensemble's disagreement** (variance across
   independently-initialized heads regressing the same GAE returns)
@@ -196,77 +246,6 @@ one:
   `weight` depends on its scale parameter in the opposite direction
   `w(n)/n` depends on `beta`'s) has been implemented but not yet evaluated
   on a full run.
-
-Full detail on every one of these -- exact numbers, every figure, every
-rejected intermediate idea -- is in
-[docs/PHASE2_CONTROLLED_MAZE.md](docs/PHASE2_CONTROLLED_MAZE.md), which
-closes with the same two open threads phase 3 picks up below.
-
-## Phase 3: realistic training and continuous actions
-
-Phase 3 has not started. It picks up two threads phase 2 closed without
-resolving, and neither is a minor loose end -- each is a genuine
-precondition for treating phase 2's central finding (the
-effective-sample-weighting fix, KL-anchored, `beta=0.9995`, `k=0.10`) as
-more than a result specific to phase 2's own deliberately extreme
-protocol.
-
-**1. Test on a full, realistic training run -- multiple short windows,
-not one long one.** Every phase 2 result, without exception, comes from a
-single trust-region window stretched to `epochs=300` against a `pi_old`
-that never moves. Realistic PPO (Stable-Baselines3, CleanRL, and
-effectively every published configuration) instead alternates short
-windows of `E=3` to `10` epochs against a fresh rollout and a refreshed
-`pi_old`, repeated many times over training. The exploitation-gap
-mechanism phase 2 isolated -- an advantage estimate computed once and
-then treated as equally reliable regardless of how many times a given
-`(state, action)` pair was actually seen -- is structurally present in
-that realistic loop too, just diluted across many small windows instead
-of concentrated in one long one. Whether the KL-anchored fix transfers to
-that regime, in what form, and at what strength (the `k` calibrated
-against a 300-epoch window has no established relationship to whatever
-would suit a 5-epoch one) is a real, unanswered empirical question. The
-natural next experiment: instrument a standard multi-window training
-loop, apply the same weighting mechanism at a similarly reduced strength,
-and check whether the same qualitative benefit (fewer exploitable
-state-level disagreements with `pi_D*`, a comparable or better `mean`
-weighted_success_rate) survives the transfer.
-
-**2. Extend the mechanism to continuous action spaces.** The exact
-`(state, action)` count this fix depends on has no equivalent once
-actions are continuous -- two continuous actions are essentially never
-bit-identical, so "how many times was this pair observed" stops meaning
-anything. Phase 2 searched hard for a substitute and came back with a
-clear negative result rather than a working one:
-
-- A small **critic ensemble's disagreement** correlates with the true
-  count on 5 of 6 deliberately independent testbeds, but the *functional
-  relationship* between variance and count is not a stable law -- a fitted
-  power-law exponent ranged from `-0.55` to `-1.54` across three testbeds,
-  an artifact of network capacity and training duration.
-- **Random Network Distillation** showed the identical instability, for
-  the same underlying reason: it is intrinsic to any signal built by
-  training a network via gradient descent to convergence on fixed data.
-- **Bellemare et al. (2016)'s density-based pseudo-count** correlates only
-  weakly with the true count and is highly sensitive to an arbitrary
-  "recoding" learning rate with no principled default.
-- A **direct reformulation** dropping the pseudo-count idea entirely
-  (`weight(s,a) = 1 - exp(-Variance(s,a)/tau)`, no beta) underperformed
-  the baseline with constant `tau`; a KL-anchored decay for `tau` has been
-  implemented but not yet evaluated on a full run.
-
-Phase 3 either finds an approach that works reliably, or documents that
-boundary as a genuine limit of this whole line of attack.
-
-**For the complete record of everything established before phase 3
-begins**, read
-[docs/PHASE1_STOCHASTIC_MAZE.md](docs/PHASE1_STOCHASTIC_MAZE.md) (the
-original stochastic maze, the first hyperparameter sweep, and the
-disagreement investigation that motivated redesigning the environment)
-together with
-[docs/PHASE2_CONTROLLED_MAZE.md](docs/PHASE2_CONTROLLED_MAZE.md) (the
-controlled maze, the full sweep and disagreement investigation on it, and
-the effective-sample-weighting fix and its validation).
 
 ## Project structure
 
