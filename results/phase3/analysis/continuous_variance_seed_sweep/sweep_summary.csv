@@ -1,0 +1,6 @@
+seed,mean,best,best_epoch,final,std,csv_path,status,log_path
+1,0.39205833333333334,0.44300000000000006,205,0.36550000000000005,0.0455979195617693,results\phase3\analysis\continuous_variance_seed_sweep\seed_1.csv,ran,results\phase3\analysis\continuous_variance_seed_sweep\seed_1.log
+0,0.36515000000000003,0.47100000000000003,100,0.3795,0.049292047352523204,results\phase3\analysis\continuous_variance_seed_sweep\seed_0.csv,ran,results\phase3\analysis\continuous_variance_seed_sweep\seed_0.log
+3,0.37154166666666655,0.4265,170,0.397,0.04250845296463195,results\phase3\analysis\continuous_variance_seed_sweep\seed_3.csv,ran,results\phase3\analysis\continuous_variance_seed_sweep\seed_3.log
+4,0.33352499999999996,0.4845,125,0.273,0.06122848463344879,results\phase3\analysis\continuous_variance_seed_sweep\seed_4.csv,ran,results\phase3\analysis\continuous_variance_seed_sweep\seed_4.log
+2,0.28554166666666675,0.42300000000000004,90,0.24400000000000002,0.05871182796454095,results\phase3\analysis\continuous_variance_seed_sweep\seed_2.csv,ran,results\phase3\analysis\continuous_variance_seed_sweep\seed_2.log
