@@ -458,7 +458,7 @@ Instead of learning anything, keep the count and change what "the same
 situation" means: count the dataset points that are *near*,
 
 $$
-n_{\text{local}}(s, a) \;=\; \sum_{(s', a') \in D} K\!\big(d\big((s, a), (s', a')\big)\big),
+n_{\text{local}}(s, a) = \sum_{(s', a') \in D} K\big(d\big((s, a), (s', a')\big)\big),
 \qquad K(0) = 1, \quad K(r) = e^{-r^2 / 2h^2}
 $$
 
@@ -476,11 +476,10 @@ counts via hash codes on continuous and high-dimensional benchmarks (Tang et al.
 (Badia et al., 2020, arXiv:2002.06038) -- but not, to our knowledge, for
 re-weighting a loss.
 
-**`LocalCountFixedDPPOTrainer`**
-(`src/ppo_exploitation/ppo/fixed_d_trainer_local_count.py`) changes only the
+<!-- So the new version changes only the
 number handed to the effective-sample-weighting mechanism: `w(n)/n`,
-`beta=0.9995` and the KL-anchored decay (`k=0.10`) are inherited unchanged, so
-any difference from the exact-count result is attributable to the local count
+`beta=0.9995` and the KL-anchored decay (`k=0.10`) are inherited unchanged. 
+Any difference from the exact-count result is attributable to the local count
 alone. Design choices: actions are matched exactly and only states are smoothed
 (all policies here are categorical); state features are standardized using the
 mean and standard deviation of the *distinct* observed states, so the scale does
@@ -551,6 +550,7 @@ means are the reliable summary. Euclidean smoothing in a maze can also pool cell
 that are close in feature space but separated by a wall, a hazard specific to
 this testbed; the collapse at $h = 0.8$ is consistent with that, but it was not
 tested.
+ -->
 
 ## Project structure
 
