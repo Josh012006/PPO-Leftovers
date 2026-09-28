@@ -470,87 +470,14 @@ no training duration, none of the instabilities documented above. Its single new
 hyperparameter has a direct meaning: the scale, in standardized features, at
 which two situations count as the same. And because it reduces exactly to the
 validated mechanism, it can be tested on this project's discrete testbeds, where
-the true count is known. Related precedent exists for exploration bonuses --
-counts via hash codes on continuous and high-dimensional benchmarks (Tang et al.,
-2017, arXiv:1611.04717) and k-nearest-neighbor novelty over an episodic memory
-(Badia et al., 2020, arXiv:2002.06038) -- but not, to our knowledge, for
-re-weighting a loss.
+the true count is known.
 
-<!-- So the new version changes only the
+So the new version changes only the
 number handed to the effective-sample-weighting mechanism: `w(n)/n`,
 `beta=0.9995` and the KL-anchored decay (`k=0.10`) are inherited unchanged. 
 Any difference from the exact-count result is attributable to the local count
-alone. Design choices: actions are matched exactly and only states are smoothed
-(all policies here are categorical); state features are standardized using the
-mean and standard deviation of the *distinct* observed states, so the scale does
-not depend on how often the behavior policy revisited a state; identical
-`(observation, action)` rows are deduplicated and weighted by multiplicity, which
-makes the discrete case exact and cheap (on the maze: about 4x10^5 transitions
-but only 1,165 distinct pairs; a k-d tree with a distance cutoff, processed in
-bounded-memory chunks, handles the general case); the Gaussian kernel is
-truncated at 5h; and every point counts itself in full, so
-$n_{\text{local}} \ge n_{\text{exact}} \ge 1$.
+alone. 
 
-**Validation of the implementation.** The kernel sum matches an independent
-brute-force computation to machine precision (both Gaussian and ball kernels,
-with duplicates and several actions). On the real maze (399,490 transitions),
-at $h = 10^{-6}$ the largest difference from the exact count is exactly 0. And a
-`LocalCountFixedDPPOTrainer` at $h = 10^{-6}$ produces a training history and
-final network weights *bit-for-bit identical* to the exact-count trainer under
-the same seed. 13 new tests cover these properties (55 in total).
-
-#### First results: bandwidth sweep
-
-`scripts/run_local_count_bandwidth_sweep.py`, one seed (0; the local count is
-deterministic, so the seed only changes minibatch order), bandwidths in standard
-deviations of the state features. The maze's median distance between distinct
-neighboring states is 0.304 in these units, the natural yardstick: $h$ far below
-it pools nothing, around it merges immediate neighbors, far above it merges
-whole regions. Means below include the epoch-0 evaluation (61 points), i.e. they
-are directly comparable to the 0.4127 and 0.4289 references. The $h = 10^{-6}$
-control reproduces the exact-count reference trajectory *identically* on all 60
-evaluation epochs they share.
-
-<div align="center">
-
-| $h$ | mean | vs. exact | best | transitions whose count changed | median $n_{\text{local}}/n_{\text{exact}}$ | max |
-|---|---|---|---|---|---|---|
-| $10^{-6}$ (exact) | 0.4289 | -- | 0.4845 | 0% | 1.00 | 1 |
-| 0.05 | 0.4283 | -0.0006 | 0.4840 | 35% | 1.00 | 2 |
-| 0.10 | 0.4238 | -0.0051 | 0.4850 | 90% | 1.00 | 21 |
-| **0.20** | **0.4295** | **+0.0006** | 0.4850 | 99.6% | 1.19 | 577 |
-| 0.40 | 0.4218 | -0.0071 | 0.4840 | 99.9% | 1.89 | 4,861 |
-| 0.80 | 0.4032 | -0.0257 | 0.4450 | 100% | 3.54 | 19,970 |
-
-</div>
-
-<div align="center">
-<img src="results/phase3/analysis/local_count_bandwidth_sweep/local_count_bandwidth.png" width="95%"><br><em>Left: mean weighted_success_rate against bandwidth (seed 0), with the exact-count and baseline references. Right: how much pooling each bandwidth does to the counts.</em>
-</div>
-
-- **No detectable loss up to $h = 0.4$.** Means stay within 0.007 of the exact
-  count and the best checkpoint is unchanged (0.484-0.485, epochs 140-175). At
-  $h = 0.2$, 99.6% of the transitions have a different count (median x1.19, mean
-  x1.79, up to x577), and performance is identical to the exact count.
-- **Over-smoothing removes the benefit.** At $h = 0.8$ (median x3.5, mean x10.6)
-  the mean falls to 0.4032, *below* the baseline (0.4127), and the peak drops to
-  0.4450.
-- **No bandwidth is shown to improve on the exact count.** Differences between
-  neighboring bandwidths (up to 0.007) are large compared with the total gain of
-  the exact-count mechanism over the baseline (0.016), so they cannot be read as
-  improvements or degradations at a single seed.
-
-What these results establish is limited: on this discrete testbed and at this
-seed, the exact `(state, action)` count can be replaced by a neighborhood count
-over a fairly wide range of bandwidths without measurable loss, which is the
-property a continuous-space version needs. They do not yet show the mechanism
-working where no exact count exists. Final-epoch values are single evaluations
-and noisy (0.401 at $h = 0.05$ against 0.4705 for the exact count), so the
-means are the reliable summary. Euclidean smoothing in a maze can also pool cells
-that are close in feature space but separated by a wall, a hazard specific to
-this testbed; the collapse at $h = 0.8$ is consistent with that, but it was not
-tested.
- -->
 
 ## Project structure
 

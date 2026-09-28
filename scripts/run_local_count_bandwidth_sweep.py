@@ -1,37 +1,42 @@
 """Bandwidth sweep for LocalCountFixedDPPOTrainer
 (fixed_d_trainer_local_count.py): does replacing the exact (state, action)
-count with a kernel-smoothed LOCAL count -- the natural continuous analogue
-of counting -- keep (or improve on) the validated count-based mechanism, and
-how does that depend on the kernel bandwidth h?
+count with a product-kernel-smoothed LOCAL count -- a separate kernel for
+state distance and for action distance -- keep (or improve on) the
+validated count-based mechanism, and how does that depend on the two
+bandwidths, bandwidth_state and bandwidth_action?
 
 Everything except the count is held at this project's practical
 configuration (clip_eps=0.55, gae_lambda=0.90, entropy_coef=0.0,
 value_coef=1.0, max_grad_norm=0.1; effective-sample weighting with
-beta=0.9995, KL-anchored, k=0.10): only the number handed to
-w(n)/n changes, so any difference from the exact-count result is
-attributable to the local count alone.
+beta=0.9995, KL-anchored, k=0.10): only the number handed to w(n)/n
+changes, so any difference from the exact-count result is attributable to
+the local count alone.
 
-h is in STANDARD DEVIATIONS of the state features (standardized over the
-distinct observed states). The script prints the dataset's nearest-neighbor
-scale at startup -- the natural yardstick: h far below it pools nothing,
-h around it merges immediate neighbors, h far above it merges regions.
+Both bandwidths are in STANDARD DEVIATIONS of their own feature (state or
+action), standardized separately. The script prints the dataset's
+nearest-neighbor scale for state and action at startup -- the natural
+yardstick for each: a bandwidth far below it pools nothing, around it
+merges immediate neighbors, far above it merges regions.
 
-SANITY CHECK BUILT INTO THE GRID: as h -> 0 the local count IS the exact
-count (verified bit-for-bit on this project's maze), so a tiny bandwidth
-(default grid includes 1e-6) must reproduce the exact-count run exactly --
-mean=0.4289 at seed 0 for this configuration. If it does not, something in
-the pipeline is wrong and the other bandwidths should not be trusted.
+SANITY CHECK BUILT INTO THE GRID: as both bandwidths -> 0 the local count
+IS the exact count (verified bit-for-bit on this project's maze), so the
+default grid includes (1e-6, 1e-6), which must reproduce the exact-count
+run -- mean=0.4289 at seed 0 for this configuration (evaluated INCLUDING
+epoch 0, matching every reference value in this project). If it does not,
+something in the pipeline is wrong and the other bandwidths should not be
+trusted.
 
 Two-phase use, same convention as run_variance_weighting_tau_sweep.py:
-  1. Coarse scan, ONE seed, several bandwidths -- find a promising region
-     (default grid below).
-  2. Multi-seed validation of the promising bandwidth(s): --seeds 0 1 2 3 4
-     --bandwidths <winner>. NOTE the local count itself is deterministic, so
-     seeds here only change minibatch shuffling, unlike the ensemble
-     variants where they also changed the signal.
+  1. Coarse scan, ONE seed, a grid of (bandwidth_state, bandwidth_action)
+     pairs -- find a promising region (default grid below).
+  2. Multi-seed validation of the promising pair(s): --seeds 0 1 2 3 4
+     --bandwidths-state <winner> --bandwidths-action <winner>. NOTE the
+     local count itself is deterministic, so seeds here only change
+     minibatch shuffling, unlike the ensemble variants where they also
+     changed the signal.
 
 Per-combination diagnostics are recorded next to each score, because they
-say WHAT the bandwidth did: median/mean/max of n_local / n_exact and the
+say WHAT the bandwidths did: median/mean/max of n_local / n_exact and the
 fraction of transitions whose count changed at all.
 
 Parallel execution, resumability, per-combination logging and worker setup
@@ -47,7 +52,7 @@ Usage:
         --start-tiers-config configs/phase2/start_tiers.yaml \
         --dataset results/phase2/dataset_D.pkl \
         --prior-checkpoint results/phase2/prior_checkpoint.pt \
-        --seeds 0 --bandwidths 1e-6 0.05 0.1 0.2 0.4 0.8 \
+        --seeds 0 --bandwidths-state 1e-6 0.1 0.2 0.4 --bandwidths-action 1e-6 0.2 0.5 \
         --checkpoint-every 5 --eval-episodes 500 --eval-seed 999 \
         --out-dir results/phase3/analysis/local_count_bandwidth_sweep \
         --cpu-count 4
@@ -93,7 +98,7 @@ def _run_one_combo(task: dict) -> dict:
     out_dir = Path(task["out_dir"])
     log_path = out_dir / f"{prefix}.log"
     seed = task["seed"]
-    bandwidth = task["bandwidth"]
+    hs, ha = task["bandwidth_state"], task["bandwidth_action"]
     try:
         set_global_seed(seed)
         env = _WORKER["env"]
@@ -110,14 +115,16 @@ def _run_one_combo(task: dict) -> dict:
         with open(log_path, "w", buffering=1) as logf, contextlib.redirect_stdout(logf):
             trainer = LocalCountFixedDPPOTrainer(
                 dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg,
-                prior_state_dict=_WORKER["prior_state_dict"], bandwidth=bandwidth, kernel=task["kernel"],
+                prior_state_dict=_WORKER["prior_state_dict"], bandwidth_state=hs, bandwidth_action=ha,
+                kernel=task["kernel"],
             )
             ratio = trainer._n_per_transition / trainer.exact_n_per_transition
             diag = {
                 "median_ratio": float(np.median(ratio)), "mean_ratio": float(ratio.mean()),
                 "max_ratio": float(ratio.max()), "frac_changed": float((ratio > 1 + 1e-9).mean()),
             }
-            print(f"bandwidth={bandwidth}  n_local/n_exact: " + "  ".join(f"{k}={v:.4g}" for k, v in diag.items()))
+            print(f"bandwidth_state={hs} bandwidth_action={ha}  n_local/n_exact: "
+                  + "  ".join(f"{k}={v:.4g}" for k, v in diag.items()))
 
             results = []
 
@@ -142,7 +149,7 @@ def _run_one_combo(task: dict) -> dict:
         df.to_csv(csv_path, index=False)
 
         return {
-            "seed": seed, "bandwidth": bandwidth, "kernel": task["kernel"],
+            "seed": seed, "bandwidth_state": hs, "bandwidth_action": ha, "kernel": task["kernel"],
             "mean": float(df["weighted_success_rate"].mean()), "best": float(df["weighted_success_rate"].max()),
             "best_epoch": int(df.loc[df["weighted_success_rate"].idxmax(), "epoch"]),
             "final": float(df["weighted_success_rate"].iloc[-1]), "std": float(df["weighted_success_rate"].std()),
@@ -151,8 +158,8 @@ def _run_one_combo(task: dict) -> dict:
     except Exception as e:
         with open(log_path, "a") as logf:
             logf.write(f"\n[ERROR] {e}\n{traceback.format_exc()}\n")
-        return {"seed": seed, "bandwidth": bandwidth, "kernel": task["kernel"], "status": f"FAILED: {e}",
-                "csv_path": None, "log_path": str(log_path)}
+        return {"seed": seed, "bandwidth_state": hs, "bandwidth_action": ha, "kernel": task["kernel"],
+                "status": f"FAILED: {e}", "csv_path": None, "log_path": str(log_path)}
 
 
 def main():
@@ -163,9 +170,14 @@ def main():
     parser.add_argument("--prior-checkpoint", required=True)
     parser.add_argument("--seeds", type=int, nargs="+", default=[0])
     parser.add_argument(
-        "--bandwidths", type=float, nargs="+", default=[1e-6, 0.05, 0.1, 0.2, 0.4, 0.8],
-        help="Kernel bandwidths h, in standard deviations of the state features. Include a tiny value "
-        "(default 1e-6) as the built-in sanity check: it must reproduce the exact-count run.",
+        "--bandwidths-state", type=float, nargs="+", default=[1e-6, 0.1, 0.2, 0.4],
+        help="State-kernel bandwidths, in standard deviations of the state features. Include a tiny value "
+        "(default 1e-6) as part of the built-in sanity check.",
+    )
+    parser.add_argument(
+        "--bandwidths-action", type=float, nargs="+", default=[1e-6, 0.2, 0.5],
+        help="Action-kernel bandwidths, in standard deviations of the action features. Include a tiny value "
+        "(default 1e-6) as part of the built-in sanity check: (1e-6, 1e-6) must reproduce the exact-count run.",
     )
     parser.add_argument("--kernel", choices=["gaussian", "ball"], default="gaussian")
     parser.add_argument("--beta", type=float, default=0.9995, help="effective_sample_beta (this project's validated value).")
@@ -201,15 +213,23 @@ def main():
 
     scale_dataset = load_dataset(args.dataset)
     obs_all = np.concatenate([tr.obs for tr in scale_dataset.trajectories])
+    actions_all = np.concatenate([tr.actions for tr in scale_dataset.trajectories])
     print(
-        f"Bandwidth yardstick: median nearest-neighbor distance between distinct states = "
-        f"{nearest_neighbor_scale(obs_all):.4f} (standardized units). h far below it pools nothing; "
-        f"h around it merges immediate neighbors; h far above it merges whole regions."
+        f"State bandwidth yardstick: median nearest-neighbor distance between distinct states = "
+        f"{nearest_neighbor_scale(obs_all):.4f} (standardized units)."
     )
-    del scale_dataset, obs_all
+    print(
+        f"Action bandwidth yardstick: median nearest-neighbor distance between distinct actions = "
+        f"{nearest_neighbor_scale(actions_all):.4f} (standardized units). This project's maze has "
+        f"{len(np.unique(actions_all))} discrete, unordered actions, so any positive bandwidth_action "
+        f"pools actions by raw label proximity -- see fixed_d_trainer_local_count.py's 'Known limits'."
+    )
+    del scale_dataset, obs_all, actions_all
 
-    combos = [{"seed": s, "bandwidth": h} for h in args.bandwidths for s in args.seeds]
-    print(f"=== {len(combos)} combination(s): {len(args.seeds)} seed(s) x {len(args.bandwidths)} bandwidth(s) "
+    combos = [{"seed": s, "bandwidth_state": hs, "bandwidth_action": ha}
+              for hs in args.bandwidths_state for ha in args.bandwidths_action for s in args.seeds]
+    print(f"=== {len(combos)} combination(s): {len(args.seeds)} seed(s) x {len(args.bandwidths_state)} "
+          f"bandwidth_state x {len(args.bandwidths_action)} bandwidth_action "
           f"(kernel={args.kernel}, beta={args.beta}, k={args.kl_k}) ===")
 
     def fmt(x):
@@ -217,7 +237,7 @@ def main():
 
     results, pending = [], []
     for combo in combos:
-        prefix = f"seed_{combo['seed']}_h_{fmt(combo['bandwidth'])}"
+        prefix = f"seed_{combo['seed']}_hs_{fmt(combo['bandwidth_state'])}_ha_{fmt(combo['bandwidth_action'])}"
         csv_path = out_dir / f"{prefix}.csv"
         if csv_path.exists() and not args.force:
             print(f"[{prefix}] SKIPPING -- {csv_path} already exists (use --force to re-run)")
@@ -286,8 +306,8 @@ def main():
                     try:
                         res = fut.result()
                     except Exception as e:  # pragma: no cover -- _run_one_combo already catches its own exceptions
-                        res = {"seed": t["seed"], "bandwidth": t["bandwidth"], "kernel": t["kernel"], "status": f"FAILED: {e}",
-                               "csv_path": None, "log_path": f"{out_dir}/{t['prefix']}.log"}
+                        res = {"seed": t["seed"], "bandwidth_state": t["bandwidth_state"], "bandwidth_action": t["bandwidth_action"],
+                               "kernel": t["kernel"], "status": f"FAILED: {e}", "csv_path": None, "log_path": f"{out_dir}/{t['prefix']}.log"}
                     results.append(res)
                     if str(res.get("status", "")).startswith("FAILED"):
                         print(f"[{n_done}/{len(pending)}] {t['prefix']}: FAILED -- {res['status']} (see {res.get('log_path')})  [{elapsed:.1f} min elapsed]")
@@ -303,13 +323,13 @@ def main():
     print(f"\n=== Sweep complete in {(time.time() - t_start) / 60:.1f} min total ({n_failed} failed) ===")
     ok = summary_df[summary_df["status"].isin(["ran", "skipped (already existed)"])] if not summary_df.empty else summary_df
     if not ok.empty:
-        print("\n=== Per-bandwidth mean weighted_success_rate, averaged over seeds ===")
-        grouped = ok.groupby("bandwidth")[["mean", "best", "final"]].mean()
-        grouped["n_seeds"] = ok.groupby("bandwidth")["mean"].count()
+        print("\n=== Per-(bandwidth_state, bandwidth_action) mean weighted_success_rate, averaged over seeds ===")
+        grouped = ok.groupby(["bandwidth_state", "bandwidth_action"])[["mean", "best", "final"]].mean()
+        grouped["n_seeds"] = ok.groupby(["bandwidth_state", "bandwidth_action"])["mean"].count()
         print(grouped.sort_index().to_string())
     print(f"\nSaved combined summary to {summary_path}")
     print("REFERENCE (baseline, no weighting): mean=0.4127")
-    print("REFERENCE (exact count, KL-anchored, k=0.10, seed 0 -- what bandwidth->0 must reproduce): mean=0.4289 best=0.4845 final=0.4705")
+    print("REFERENCE (exact count, KL-anchored, k=0.10, seed 0 -- what (1e-6, 1e-6) must reproduce): mean=0.4289 best=0.4845 final=0.4705")
 
 
 if __name__ == "__main__":
