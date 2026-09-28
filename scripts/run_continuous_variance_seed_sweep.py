@@ -111,6 +111,13 @@ def _run_one_combo(task: dict) -> dict:
                 results.append({"epoch": epoch, **r})
                 print(f"  epoch {epoch:4d}: weighted={r['weighted_success_rate']:.4f}  approx_kl={summary['approx_kl']:.4f}")
 
+            # theta == pi_beta exactly here (the ensemble warm-up above only
+            # touches trainer.ensemble, never trainer.net) -- matches
+            # scripts/_analysis_lib.py's own epoch-0 evaluation, so every
+            # mean in this project is computed over the same epoch range
+            # (0..epochs).
+            eval_cb(0, trainer.net, {"approx_kl": 0.0})
+
             trainer.train(verbose=True, eval_every_epochs=task["checkpoint_every"], eval_callback=eval_cb)
 
         df = pd.DataFrame(results)

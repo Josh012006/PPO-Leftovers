@@ -386,10 +386,174 @@ job is to give `tau_0` a reasonable starting calibration point, not to fully
 train the ensemble) followed by CONTINUOUS co-training of the ensemble
 alongside the policy for the entire run, with variance recomputed fresh every
 epoch (`variance_recompute_every=1` by default) rather than fixed at a single
-early snapshot. A 5-seed sweep at the same `ensemble_n_heads=15`, `tau_kl_k=0.5`,
-`tau_quantile=0.3` settings with the new continuous training is the immediate next step.
+early snapshot.
+
+The 5-seed sweep at the same `ensemble_n_heads=15`, `tau_kl_k=0.5`,
+`tau_quantile=0.3` settings
+(`results/phase3/analysis/continuous_variance_seed_sweep/`) **did not bear
+fruit: on the same seeds, continuous co-training did worse than the frozen
+ensemble.** The mean across the 5 seeds is 0.3496 (std 0.0415), against 0.3818
+(std 0.0390) for the frozen ensemble and 0.4127 for the baseline. No seed beats
+the baseline (the frozen version had exactly one: the seed its settings had
+been selected on), and 4 of the 5 seeds are worse than their own frozen
+counterpart (mean paired change -0.0322). The seed-to-seed spread does not
+shrink either, so the hypothesis that continuous co-training would stabilize
+the ensemble's signal is not supported.
+
+<div align="center">
+<img src="results/phase3/analysis/continuous_variance_seed_sweep/continuous_vs_frozen.png" width="65%"><br><em>Same 5 seeds, frozen vs. continuously co-trained ensemble (gray lines pair each seed; black diamond = mean over seeds). Co-training moves 4 of the 5 seeds down and leaves the spread unchanged.</em>
+</div>
+
+The shortfall is not in the peak but in holding it: the best checkpoint of
+each seed reaches 0.42-0.48 (seed 4 reaches 0.4845, level with the exact-count
+mechanism's own peak), yet four of the five runs finish between 0.078 and
+0.211 below their own peak (the fifth, 0.029). Final-epoch values are single evaluations and noisy, so this is
+indicative only -- the 60-checkpoint means above already show the shortfall.
+
+To check whether the mechanism behaved the way the hypothesis assumed, the
+first 8 epochs of co-training (after the 10-epoch warm-up; `K=15`, seed 0) were
+instrumented, tracking the rank correlation between ensemble variance and the
+true count over the 1,165 distinct `(state, action)` pairs, and the shape of
+the resulting weights:
+
+- **The signal does not drift away from coverage.** The Spearman correlation
+  between `-variance` and the exact count stays at 0.69-0.71 throughout
+  (0.690 after warm-up, 0.710 at epoch 8). The simple explanation -- that as the
+  heads converge, their remaining disagreement reflects return noise rather than
+  data scarcity -- is not what happens over the horizon measured.
+- **The weights concentrate only mildly.** Their effective-sample-size fraction,
+  $(\sum w)^2 / (N \sum w^2)$, falls from 0.888 to 0.825 and the mean weight from
+  0.755 to 0.668, because the median variance falls (2.65e-4 to 1.61e-4)
+  faster than `tau` does (1.35e-4 to 1.17e-4).
+- **The variance weights differ in shape from the count weights.** 35-46% of
+  transitions sit above weight 0.9 (45.5% after warm-up, 35.4% at epoch 8),
+  against 15.5% for the count-based weights (`beta=0.9995`), whose mean weight
+  is 0.618.
+
+Only 8 of the 300 co-training epochs were instrumented, and the cause of the
+degradation remains unidentified.
+
+Across all the variants of the direct variance weighting -- frozen ensemble with
+constant `tau`, frozen with KL-anchored `tau` (4 head counts x 5 seeds), the
+`tau_kl_k x tau_quantile` calibration with its 5-seed validation, and continuous
+co-training -- no configuration beats the baseline reliably across seeds.
+
+> **Convention note.** Every variance-based mean in this section averages the
+> evaluation checkpoints at epochs 5-300 (60 points), while the reference
+> values 0.4127 and 0.4289 also include the epoch-0 evaluation of the starting
+> policy `pi_beta` (0.3125; 61 points). Putting them on the same footing would
+> lower the variance-based means by at most ~0.002 -- always in the direction
+> that makes these methods look slightly better than they are, and small next to
+> every gap reported here.
+
+### Extension to the continuous action space : Counting locally instead of exactly
+
+The learned proxies above fail for a shared reason: anything built by training a
+network by gradient descent inherits that network's capacity, training-duration
+and seed dependence. But the underlying observation is that we always have the
+`(state, action)` pairs themselves, from the dataset. The exact count is
+meaningless in continuous spaces only because it demands that two pairs be
+*bit-identical* to count as the same situation; nothing forces that definition.
+Instead of learning anything, keep the count and change what "the same
+situation" means: count the dataset points that are *near*,
+
+$$
+n_{\text{local}}(s, a) \;=\; \sum_{(s', a') \in D} K\!\big(d\big((s, a), (s', a')\big)\big),
+\qquad K(0) = 1, \quad K(r) = e^{-r^2 / 2h^2}
+$$
+
+This is a strict generalization of the exact count, not a substitute for it: as
+the bandwidth $h \to 0$ only bit-identical pairs contribute and $n_{\text{local}}$
+*is* the exact count. Three consequences make it a good fit here. It is
+non-parametric, so it is deterministic given the dataset -- no network, no seed,
+no training duration, none of the instabilities documented above. Its single new
+hyperparameter has a direct meaning: the scale, in standardized features, at
+which two situations count as the same. And because it reduces exactly to the
+validated mechanism, it can be tested on this project's discrete testbeds, where
+the true count is known. Related precedent exists for exploration bonuses --
+counts via hash codes on continuous and high-dimensional benchmarks (Tang et al.,
+2017, arXiv:1611.04717) and k-nearest-neighbor novelty over an episodic memory
+(Badia et al., 2020, arXiv:2002.06038) -- but not, to our knowledge, for
+re-weighting a loss.
+
+**`LocalCountFixedDPPOTrainer`**
+(`src/ppo_exploitation/ppo/fixed_d_trainer_local_count.py`) changes only the
+number handed to the effective-sample-weighting mechanism: `w(n)/n`,
+`beta=0.9995` and the KL-anchored decay (`k=0.10`) are inherited unchanged, so
+any difference from the exact-count result is attributable to the local count
+alone. Design choices: actions are matched exactly and only states are smoothed
+(all policies here are categorical); state features are standardized using the
+mean and standard deviation of the *distinct* observed states, so the scale does
+not depend on how often the behavior policy revisited a state; identical
+`(observation, action)` rows are deduplicated and weighted by multiplicity, which
+makes the discrete case exact and cheap (on the maze: about 4x10^5 transitions
+but only 1,165 distinct pairs; a k-d tree with a distance cutoff, processed in
+bounded-memory chunks, handles the general case); the Gaussian kernel is
+truncated at 5h; and every point counts itself in full, so
+$n_{\text{local}} \ge n_{\text{exact}} \ge 1$.
+
+**Validation of the implementation.** The kernel sum matches an independent
+brute-force computation to machine precision (both Gaussian and ball kernels,
+with duplicates and several actions). On the real maze (399,490 transitions),
+at $h = 10^{-6}$ the largest difference from the exact count is exactly 0. And a
+`LocalCountFixedDPPOTrainer` at $h = 10^{-6}$ produces a training history and
+final network weights *bit-for-bit identical* to the exact-count trainer under
+the same seed. 13 new tests cover these properties (55 in total).
+
+#### First results: bandwidth sweep
+
+`scripts/run_local_count_bandwidth_sweep.py`, one seed (0; the local count is
+deterministic, so the seed only changes minibatch order), bandwidths in standard
+deviations of the state features. The maze's median distance between distinct
+neighboring states is 0.304 in these units, the natural yardstick: $h$ far below
+it pools nothing, around it merges immediate neighbors, far above it merges
+whole regions. Means below include the epoch-0 evaluation (61 points), i.e. they
+are directly comparable to the 0.4127 and 0.4289 references. The $h = 10^{-6}$
+control reproduces the exact-count reference trajectory *identically* on all 60
+evaluation epochs they share.
+
+<div align="center">
+
+| $h$ | mean | vs. exact | best | transitions whose count changed | median $n_{\text{local}}/n_{\text{exact}}$ | max |
+|---|---|---|---|---|---|---|
+| $10^{-6}$ (exact) | 0.4289 | -- | 0.4845 | 0% | 1.00 | 1 |
+| 0.05 | 0.4283 | -0.0006 | 0.4840 | 35% | 1.00 | 2 |
+| 0.10 | 0.4238 | -0.0051 | 0.4850 | 90% | 1.00 | 21 |
+| **0.20** | **0.4295** | **+0.0006** | 0.4850 | 99.6% | 1.19 | 577 |
+| 0.40 | 0.4218 | -0.0071 | 0.4840 | 99.9% | 1.89 | 4,861 |
+| 0.80 | 0.4032 | -0.0257 | 0.4450 | 100% | 3.54 | 19,970 |
+
+</div>
+
+<div align="center">
+<img src="results/phase3/analysis/local_count_bandwidth_sweep/local_count_bandwidth.png" width="95%"><br><em>Left: mean weighted_success_rate against bandwidth (seed 0), with the exact-count and baseline references. Right: how much pooling each bandwidth does to the counts.</em>
+</div>
+
+- **No detectable loss up to $h = 0.4$.** Means stay within 0.007 of the exact
+  count and the best checkpoint is unchanged (0.484-0.485, epochs 140-175). At
+  $h = 0.2$, 99.6% of the transitions have a different count (median x1.19, mean
+  x1.79, up to x577), and performance is identical to the exact count.
+- **Over-smoothing removes the benefit.** At $h = 0.8$ (median x3.5, mean x10.6)
+  the mean falls to 0.4032, *below* the baseline (0.4127), and the peak drops to
+  0.4450.
+- **No bandwidth is shown to improve on the exact count.** Differences between
+  neighboring bandwidths (up to 0.007) are large compared with the total gain of
+  the exact-count mechanism over the baseline (0.016), so they cannot be read as
+  improvements or degradations at a single seed.
+
+What these results establish is limited: on this discrete testbed and at this
+seed, the exact `(state, action)` count can be replaced by a neighborhood count
+over a fairly wide range of bandwidths without measurable loss, which is the
+property a continuous-space version needs. They do not yet show the mechanism
+working where no exact count exists. Final-epoch values are single evaluations
+and noisy (0.401 at $h = 0.05$ against 0.4705 for the exact count), so the
+means are the reliable summary. Euclidean smoothing in a maze can also pool cells
+that are close in feature space but separated by a wall, a hazard specific to
+this testbed; the collapse at $h = 0.8$ is consistent with that, but it was not
+tested.
 
 ## Project structure
+
 
 ```
 configs/                        # every experimental knob lives here, not in code

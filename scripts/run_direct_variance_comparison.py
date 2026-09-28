@@ -136,6 +136,11 @@ def main():
             best_tracker["epoch"] = epoch
             best_tracker["state_dict"] = copy.deepcopy(net.state_dict())
 
+    # theta == pi_beta exactly here, before any training step -- matches
+    # scripts/_analysis_lib.py's own epoch-0 evaluation, so every mean in
+    # this project is computed over the same epoch range (0..epochs).
+    eval_cb(0, trainer.net, {})
+
     trainer.train(verbose=not args.quiet, eval_every_epochs=args.checkpoint_every, eval_callback=eval_cb)
 
     if args.save_best_checkpoint and best_tracker["state_dict"] is not None:
