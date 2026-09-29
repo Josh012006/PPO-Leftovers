@@ -1,0 +1,38 @@
+# Learning-rate sweep for LocalCountFixedDPPOTrainer, near-exact bandwidths
+# (this project's own maze is discrete: unordered actions, so bandwidth_action
+# stays ~0; bandwidth_state also ~0, so this run is expected to behave like
+# the already-validated exact-count mechanism -- the point here is NOT to
+# test the local count itself, only whether a higher lr reaches a good
+# weighted_success_rate sooner).
+#
+# Goal: not just the run's mean, but the EPOCH at which weighted_success_rate
+# first crosses each threshold below. See scripts/run_local_count_lr_sweep.py.
+
+bandwidth_state: 1.0e-6
+bandwidth_action: 1.0e-6
+kernel: gaussian
+
+beta: 0.9995            # effective_sample_beta, this project's validated value
+kl_k: 0.10              # effective_sample_kl_k, this project's practical choice
+
+epochs: 300
+checkpoint_every: 5
+eval_episodes: 500
+eval_seed: 999
+
+clip_eps: 0.55
+gae_lambda: 0.90
+
+# increasing from this project's current default (3e-4)
+learning_rates:
+  - 0.0003    # current default, control
+  - 0.0006
+  - 0.0010
+  - 0.0020
+  - 0.0040
+
+# epoch-of-first-crossing is reported for each of these
+success_rate_thresholds:
+  - 0.35
+  - 0.40
+  - 0.42
