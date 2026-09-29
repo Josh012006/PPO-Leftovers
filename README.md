@@ -455,28 +455,58 @@ and seed dependence. But the underlying observation is that we always have the
 meaningless in continuous spaces only because it demands that two pairs be
 *bit-identical* to count as the same situation; nothing forces that definition.
 Instead of learning anything, keep the count and change what "the same
-situation" means: count the dataset points that are *near*,
+situation" means: count the dataset points that are *near*, using a SEPARATE
+kernel for the state part and the action part of the distance:
 
 $$
-n_{\text{local}}(s, a) = \sum_{(s', a') \in D} K\big(d\big((s, a), (s', a')\big)\big),
-\qquad K(0) = 1, \quad K(r) = e^{-r^2 / 2h^2}
+n_{\text{local}}(s, a) = \sum_{(s', a') \in D} K_s\big(d(s, s')\big) \times K_a\big(d(a, a')\big),
+\qquad K_s(r) = e^{-r^2 / 2h_s^2}, \quad K_a(r) = e^{-r^2 / 2h_a^2}
 $$
 
-This is a strict generalization of the exact count, not a substitute for it: as
-the bandwidth $h \to 0$ only bit-identical pairs contribute and $n_{\text{local}}$
-*is* the exact count. Three consequences make it a good fit here. It is
-non-parametric, so it is deterministic given the dataset -- no network, no seed,
-no training duration, none of the instabilities documented above. Its single new
-hyperparameter has a direct meaning: the scale, in standardized features, at
-which two situations count as the same. And because it reduces exactly to the
-validated mechanism, it can be tested on this project's discrete testbeds, where
-the true count is known.
+$d$ is Euclidean distance after standardizing state and action separately, and
+$h_s$, $h_a$ are each in standard deviations of their own feature. This is a
+strict generalization of the exact count: as $h_s \to 0$ AND $h_a \to 0$, only
+bit-identical pairs contribute and $n_{\text{local}}$ *is* the exact count. The
+two bandwidths are independent, so either one alone can be driven to ~0 while
+the other stays positive -- an EXACT match on one side (e.g. a discrete action,
+as in this project's own maze) with a SMOOTHED match on the other (a continuous
+state) is expected to reduce to the exact-count mechanism on that side, not an
+approximation of it. Three plots below confirm this on synthetic data before
+using it on any real environment:
 
-So the new version changes only the
+<div align="center">
+<img src="results/phase3/analysis/local_count_explanation/local_count_continuous_3d.png" width="90%"><br><em>Continuous 7-D state and 7-D action (e.g. robotic-arm joint angles and torques). Two repeated motions (dense), one rare maneuver, one never-repeated configuration. Only when BOTH bandwidths are large does the count rise (bottom-right); either one alone leaves every count near 1.</em>
+</div>
+
+<div align="center">
+<img src="results/phase3/analysis/local_count_explanation/local_count_discrete_3d.png" width="90%"><br><em>Discrete grid state and an ORDERED discrete action (a discretized throttle level). Cell C is rare but sits next to dense cell A: a large h_s alone inflates its count from 4.6 to 84.5 -- borrowing A's density, the "crossing a wall" risk this project flagged for its own maze.</em>
+</div>
+
+Being non-parametric, this is deterministic given the dataset -- no network, no
+seed, no training duration, none of the instabilities documented above. Its two
+hyperparameters each have a direct meaning: the scale, in standardized features,
+at which two states (or two actions) count as the same. And because it reduces
+exactly to the validated mechanism on either side, it can be tested on this
+project's discrete testbeds, where the true count is known.
+
+The new version changes only the
 number handed to the effective-sample-weighting mechanism: `w(n)/n`,
 `beta=0.9995` and the KL-anchored decay (`k=0.10`) are inherited unchanged. 
 Any difference from the exact-count result is attributable to the local count
 alone. 
+
+
+### Testing the new weighting method on a complete run
+
+Now that we have a representative of our new method that works for both discrete and 
+continuous spaces, we can test it on a complete run. The goal is to see if we can obtain 
+an improvement in a real training scenario.
+
+The first thing I want to test concerns the number of training epochs per batch. In each of our runs
+until now, we used a 300 epoch window, which was useful to study the mecanism. But in a real training situation,
+we usually only do 3 to 10 epochs of gradient descent. So the first test I am doing is to see
+if by increasing the learning rate I can have the same improvement on a short window (limit of 20 epochs). We can see it
+as trying to displace the beneficial window a few epochs earlier.
 
 
 ## Project structure
