@@ -1,23 +1,32 @@
-"""Learning-rate sweep for LocalCountFixedDPPOTrainer
-(fixed_d_trainer_local_count.py), at near-exact bandwidths
+"""Learning-rate sweep for TrustGatedLocalCountFixedDPPOTrainer
+(fixed_d_trainer_trust_gated.py), at near-exact bandwidths
 (bandwidth_state, bandwidth_action ~ 0, this project's maze being discrete
 with unordered actions -- see the README, "Counting locally instead of
 exactly"). This is NOT a test of the local count itself: at these
-bandwidths it reduces to the already-validated exact-count mechanism. The
-question here is purely whether a higher learning rate reaches a good
-weighted_success_rate SOONER, before running a full, expensive sweep at the
-current default lr=0.0003 that all this project's other results share.
+bandwidths it reduces to the already-validated exact-count mechanism.
+
+SAME EXPERIMENT as run_local_count_lr_sweep.py / configs/phase3/
+local_count_lr_sweep.yaml (same lr grid, same k, same everything), except
+the clip-frac trust gate (rho) is enabled. That earlier, ungated sweep
+found lr=0.001 reaches all three thresholds within 25 epochs but then
+collapses well below baseline for the remaining ~270 epochs, with
+clip_frac staying elevated throughout the collapse -- exactly the signal
+rho is meant to catch. This sweep answers: does gating on clip_frac make a
+higher learning rate usable for its whole run, not just its first ~25-30
+epochs, by falling back to uniform weighting once KL is no longer trusted?
 
 Unlike every other sweep script in this project, the metric of interest is
 NOT the run's mean over the full 300 epochs: it is the EPOCH at which
 weighted_success_rate first crosses each of a few thresholds (read from the
 YAML config, e.g. 0.35 / 0.40 / 0.42). mean/best/final are still recorded
-for reference, but the printed summary leads with the crossing epochs.
+for reference, and so is the epoch (if any) at which the trust gate tripped
+for each run, so a direct before/after comparison with the ungated sweep is
+possible from the summary CSV alone.
 
 Reads all settings from a YAML config (see configs/phase3/
-local_count_lr_sweep.yaml) except --seeds, --out-dir, --cpu-count and
---force, which stay as command-line flags, matching this project's other
-sweep scripts.
+local_count_lr_sweep_trust_gated.yaml) except --seeds, --out-dir,
+--cpu-count and --force, which stay as command-line flags, matching this
+project's other sweep scripts.
 
 Parallel execution, resumability, per-combination logging and worker setup
 mirror run_local_count_bandwidth_sweep.py / analyze_sweep.py (spawn
@@ -27,14 +36,14 @@ skip combinations whose .csv already exists unless --force). No
 checkpoints are saved.
 
 Usage:
-    python scripts/run_local_count_lr_sweep.py \
-        --config configs/phase3/local_count_lr_sweep.yaml \
+    python scripts/run_local_count_lr_sweep_trust_gated.py \
+        --config configs/phase3/local_count_lr_sweep_trust_gated.yaml \
         --env-config configs/phase2/env_maze.yaml \
         --start-tiers-config configs/phase2/start_tiers.yaml \
         --dataset results/phase2/dataset_D.pkl \
         --prior-checkpoint results/phase2/prior_checkpoint.pt \
         --seeds 0 \
-        --out-dir results/phase3/analysis/local_count_lr_sweep \
+        --out-dir results/phase3/analysis/local_count_lr_sweep_trust_gated \
         --cpu-count 5
 """
 from __future__ import annotations
@@ -56,7 +65,7 @@ import yaml
 from ppo_exploitation.data.collect import load_dataset
 from ppo_exploitation.envs.stochastic_maze import StochasticMazeEnv
 from ppo_exploitation.eval.evaluate import evaluate_policy_weighted, get_tier_start_lists
-from ppo_exploitation.ppo.fixed_d_trainer_local_count import LocalCountFixedDPPOTrainer
+from ppo_exploitation.ppo.fixed_d_trainer_trust_gated import TrustGatedLocalCountFixedDPPOTrainer
 from ppo_exploitation.utils.config import MazeEnvConfig, PPOHyperparams, StartTierConfig
 from ppo_exploitation.utils.seeding import set_global_seed
 
@@ -99,12 +108,12 @@ def _run_one_combo(task: dict) -> dict:
         )
 
         with open(log_path, "w", buffering=1) as logf, contextlib.redirect_stdout(logf):
-            trainer = LocalCountFixedDPPOTrainer(
+            trainer = TrustGatedLocalCountFixedDPPOTrainer(
                 dataset, obs_dim=dataset.obs_dim, n_actions=dataset.n_actions, cfg=cfg,
                 prior_state_dict=_WORKER["prior_state_dict"], bandwidth_state=task["bandwidth_state"],
-                bandwidth_action=task["bandwidth_action"], kernel=task["kernel"],
+                bandwidth_action=task["bandwidth_action"], kernel=task["kernel"], rho=task["rho"],
             )
-            print(f"lr={lr}")
+            print(f"lr={lr} rho={task['rho']}")
 
             results = []
 
@@ -113,14 +122,17 @@ def _run_one_combo(task: dict) -> dict:
                     env, lambda o, s: net.act_numpy(o, deterministic=True)[0], n_episodes=task["eval_episodes"],
                     seed=task["eval_seed"], covered_starts=_WORKER["covered_starts"], held_out_starts=_WORKER["held_out_starts"],
                 )
-                results.append({"epoch": epoch, "approx_kl": summary["approx_kl"], **r})
+                # approx_kl/clip_frac/trust_broken saved alongside the eval metrics (not just printed) so the
+                # trust gate's effect can be read directly from the CSV, without needing the .log file.
+                results.append({"epoch": epoch, "approx_kl": summary.get("approx_kl"), "clip_frac": summary.get("clip_frac"),
+                                 "trust_broken": summary.get("trust_broken", False), **r})
                 print(f"  epoch {epoch:4d}: weighted={r['weighted_success_rate']:.4f}  approx_kl={summary['approx_kl']:.4f}")
 
             # theta == pi_beta exactly here, before any training step --
             # matches scripts/_analysis_lib.py's own epoch-0 evaluation, so
             # every mean in this project is computed over the same epoch
             # range (0..epochs).
-            eval_cb(0, trainer.net, {"approx_kl": 0.0})
+            eval_cb(0, trainer.net, {"approx_kl": 0.0, "clip_frac": 0.0, "trust_broken": False})
 
             trainer.train(verbose=True, eval_every_epochs=task["checkpoint_every"], eval_callback=eval_cb)
 
@@ -130,7 +142,7 @@ def _run_one_combo(task: dict) -> dict:
 
         crossings = {f"epoch_at_{t:g}": _first_crossing_epoch(df, t) for t in task["success_rate_thresholds"]}
         return {
-            "seed": seed, "lr": lr,
+            "seed": seed, "lr": lr, "rho": task["rho"], "trust_broken_at_epoch": trainer.trust_broken_at_epoch,
             "mean": float(df["weighted_success_rate"].mean()), "best": float(df["weighted_success_rate"].max()),
             "best_epoch": int(df.loc[df["weighted_success_rate"].idxmax(), "epoch"]),
             "final": float(df["weighted_success_rate"].iloc[-1]),
@@ -139,7 +151,7 @@ def _run_one_combo(task: dict) -> dict:
     except Exception as e:
         with open(log_path, "a") as logf:
             logf.write(f"\n[ERROR] {e}\n{traceback.format_exc()}\n")
-        return {"seed": seed, "lr": lr, "status": f"FAILED: {e}", "csv_path": None, "log_path": str(log_path)}
+        return {"seed": seed, "lr": lr, "rho": task.get("rho"), "status": f"FAILED: {e}", "csv_path": None, "log_path": str(log_path)}
 
 
 def main():
@@ -191,9 +203,11 @@ def main():
             print(f"[{prefix}] SKIPPING -- {csv_path} already exists (use --force to re-run)")
             df_existing = pd.read_csv(csv_path)
             crossings = {f"epoch_at_{t:g}": _first_crossing_epoch(df_existing, t) for t in thresholds}
+            broken_rows = df_existing[df_existing.get("trust_broken", False) == True] if "trust_broken" in df_existing.columns else df_existing.iloc[0:0]
             results.append(
                 {
-                    **combo, "prefix": prefix,
+                    **combo, "rho": y["rho"], "prefix": prefix,
+                    "trust_broken_at_epoch": int(broken_rows["epoch"].iloc[0]) if len(broken_rows) else None,
                     "mean": float(df_existing["weighted_success_rate"].mean()),
                     "best": float(df_existing["weighted_success_rate"].max()),
                     "best_epoch": int(df_existing.loc[df_existing["weighted_success_rate"].idxmax(), "epoch"]),
@@ -207,7 +221,7 @@ def main():
     t_start = time.time()
     common = dict(
         out_dir=str(out_dir), epochs=y["epochs"], minibatch_size=args.minibatch_size, clip_eps=y["clip_eps"],
-        gae_lambda=y["gae_lambda"], beta=y["beta"], kl_k=y["kl_k"], kernel=y["kernel"],
+        gae_lambda=y["gae_lambda"], beta=y["beta"], kl_k=y["kl_k"], kernel=y["kernel"], rho=y["rho"],
         bandwidth_state=y["bandwidth_state"], bandwidth_action=y["bandwidth_action"],
         checkpoint_every=y["checkpoint_every"], eval_episodes=y["eval_episodes"], eval_seed=y["eval_seed"],
         success_rate_thresholds=thresholds,
@@ -256,7 +270,7 @@ def main():
                     try:
                         res = fut.result()
                     except Exception as e:  # pragma: no cover -- _run_one_combo already catches its own exceptions
-                        res = {"seed": t["seed"], "lr": t["lr"], "status": f"FAILED: {e}", "csv_path": None, "log_path": f"{out_dir}/{t['prefix']}.log"}
+                        res = {"seed": t["seed"], "lr": t["lr"], "rho": t.get("rho"), "status": f"FAILED: {e}", "csv_path": None, "log_path": f"{out_dir}/{t['prefix']}.log"}
                     results.append(res)
                     if str(res.get("status", "")).startswith("FAILED"):
                         print(f"[{n_done}/{len(pending)}] {t['prefix']}: FAILED -- {res['status']} (see {res.get('log_path')})  [{elapsed:.1f} min elapsed]")
@@ -273,7 +287,7 @@ def main():
     if not ok.empty:
         crossing_cols = [c for c in ok.columns if c.startswith("epoch_at_")]
         print("\n=== Epoch of first crossing each threshold, by learning rate (lower = faster) ===")
-        print(ok.sort_values("lr")[["lr", "seed"] + crossing_cols + ["mean", "best", "best_epoch", "final"]].to_string(index=False))
+        print(ok.sort_values("lr")[["lr", "seed"] + crossing_cols + ["trust_broken_at_epoch", "mean", "best", "best_epoch", "final"]].to_string(index=False))
     print(f"\nSaved combined summary to {summary_path}")
 
 

@@ -1,0 +1,34 @@
+# Same experiment as configs/phase3/local_count_lr_sweep.yaml, with the
+# clip-frac trust gate (rho) enabled -- to see whether it makes the
+# mechanism robust to a higher lr, instead of the collapse observed
+# without it (lr=0.001 and above regressed below baseline after ~epoch 30-60).
+
+bandwidth_state: 1.0e-6
+bandwidth_action: 1.0e-6
+kernel: gaussian
+
+beta: 0.9995            # effective_sample_beta, this project's validated value
+kl_k: 0.10               # effective_sample_kl_k, this project's practical choice
+rho: 0.20                # effective_sample_clip_trust_rho -- this project's own runs started regressing near here
+
+epochs: 300
+checkpoint_every: 5
+eval_episodes: 500
+eval_seed: 999
+
+clip_eps: 0.55
+gae_lambda: 0.90
+
+# identical grid to the ungated sweep, for a direct comparison
+learning_rates:
+  - 0.0003    # current default, control
+  - 0.0006
+  - 0.0010
+  - 0.0020
+  - 0.0040
+
+# epoch-of-first-crossing is reported for each of these
+success_rate_thresholds:
+  - 0.35
+  - 0.40
+  - 0.42
