@@ -538,65 +538,6 @@ for long stretches, `pi_beta`'s own starting performance (0.3125). `lr=0.002` an
 `lr=0.004` never reach a useful level at all. `lr=0.0006` is the steadiest of the
 four faster rates -- it never collapses -- but does not clear 0.42 by epoch 25 either.
 
-#### Why: clip_frac reveals when KL stops meaning what the anchor assumes
-
-The KL-anchor (`scale = 1 + |KL|/k`) assumes KL measures genuine, still-useful policy
-improvement, at whatever pace training moves. Plotting `approx_kl` and `clip_frac` for
-the same five runs shows where this breaks:
-
-<div align="center">
-<img src="results/phase3/analysis/local_count_lr_sweep/lr_sweep_kl_clipfrac.png" width="95%"><br><em>Left: KL keeps climbing at every lr, never truly flat. Right: clip_frac saturates early at high lr and stays roughly flat afterward.</em>
-</div>
-
-At `lr=0.004`, `clip_frac` is already 0.34 by epoch 30 and only drifts to 0.37 by
-epoch 240, while `approx_kl` keeps climbing the whole time (0.55 to 0.75). `clip_frac`
-is a threshold statistic. Once a pair has crossed `1 +/- clip_eps`, drifting further
-doesn't move it. So a flat `clip_frac` alongside a still-growing KL means the policy
-keeps moving in a regime PPO's own trust region no longer bounds, not that it keeps
-learning something the anchor should keep rewarding. `lr=0.001`'s own `clip_frac`
-reaches ~0.27 right around epoch 60-90, exactly where its `weighted_success_rate`
-collapses.
-
-This raised a natural question : should `k` itself change with `lr`? We think not.
-**`k`'s own intuition is a distance, in KL, that the policy is expected to need in
-order to extract what a correction can usefully teach it** -- closer to "how far
-should the policy be allowed to drift before this correction has done its job" than
-a raw tuning knob, and that distance is a property of the environment and the
-dataset, not of the learning rate used to reach it. What breaks at high `lr` is not
-that this distance changed -- it's that KL stops reliably measuring it, once the
-policy is being pushed outside the region PPO's own clipping is meant to keep it in.
-No value of `k` fixes a signal that has stopped being trustworthy.
-
-#### A trust gate on the anchor: $\rho$
-
-If `clip_frac`, not `k`, is the sign that KL has stopped being trustworthy, the
-natural fix is to gate on it directly rather than search for a `k` that happens to
-compensate. **`rho` (`effective_sample_clip_trust_rho`, default `0.20` -- roughly
-where this project's own runs started regressing) is the `clip_frac` level beyond
-which KL is no longer trusted.** The first epoch whose own `clip_frac` reaches or
-exceeds `rho` trips a ONE-WAY latch: every epoch from then on uses `weight = 1` for
-every transition. It's the same limit the KL-anchor already approaches as KL goes to
-infinity, reached directly instead of asymptotically. The gate never reopens within a window: once
-`clip_frac` has shown the policy is moving outside PPO's own trust region, there is
-no principled later epoch at which KL should be trusted again for that window. A
-fresh window (a new `pi_old` after a refresh, in a realistic multi-window loop)
-starts with an untripped gate.
-
-Reverting to uniform rather than freezing `scale` at its last trusted value is
-deliberate: freezing would still depend on a KL value taken right as `clip_frac` was
-already elevated -- right when the signal was becoming least trustworthy -- and would
-keep a frozen distortion where the anchor's own schedule would have kept adapting.
-Reverting to what the schedule already degrades toward removes the dependency
-entirely.
-
-`k` and `rho` answer different questions. `k` says how much drift a correction should
-need to do its job, assuming KL is a trustworthy ruler. `rho` says when to stop
-trusting the ruler at all. Neither substitutes for the other: a well-chosen `k` on an
-untrustworthy KL still misleads, and `rho` alone doesn't say how fast the correction
-should fade while KL is still trustworthy.
-
-Runs to check whether the gate actually restores `lr=0.001`-and-above to a useful,
-non-collapsing run are in progress.
 
 ## Project structure
 
