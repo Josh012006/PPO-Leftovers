@@ -1,0 +1,55 @@
+# Isolates whether the high-lr collapse (local_count_lr_sweep.yaml, KL-anchored
+# k=0.10) is intrinsic to PPO/lr itself, or specific to the weighting layer
+# on top of it -- and if the latter, whether KL-anchored decay is still a
+# better base than never decaying at all (constant beta).
+#
+# Two modes, same lr grid as the KL-anchored sweep:
+#   none     -- no weighting at all (plain FixedDPPOTrainer, no local count involved)
+#   constant -- LocalCountFixedDPPOTrainer, SAME near-exact bandwidths as the
+#               KL-anchored sweep, beta fixed, NEVER decays (effective_sample_kl_anchor=False)
+#
+# "constant" deliberately goes through LocalCountFixedDPPOTrainer, not plain
+# FixedDPPOTrainer, even though bandwidth ~ 0 makes the two numerically
+# identical (already verified bit-for-bit elsewhere in this project) --
+# this keeps the trainer class identical across every arm of this
+# comparison (this sweep's "constant" and the earlier "KL-anchored" one),
+# differing only in effective_sample_kl_anchor, not in which code path
+# computed the count. "none" has no such requirement: it never touches a
+# count of any kind, local or exact.
+#
+# beta=0.9995 in "constant" mode is this project's own validated starting
+# value (same one the KL-anchored sweep decays FROM), so the only thing
+# that differs from that earlier sweep is whether beta decays at all.
+
+bandwidth_state: 1.0e-6   # "constant" mode only -- same near-exact bandwidths as the KL-anchored sweep
+bandwidth_action: 1.0e-6
+kernel: gaussian
+
+beta: 0.9995   # "constant" mode only
+
+epochs: 300
+checkpoint_every: 5
+eval_episodes: 500
+eval_seed: 999
+
+clip_eps: 0.55
+gae_lambda: 0.90
+
+modes:
+  - none
+  - constant
+
+learning_rates:
+  - 0.0003
+  - 0.0006
+  - 0.0008
+  - 0.001
+  - 0.002
+  - 0.004
+
+# epoch-of-first-crossing is reported for each of these, same convention
+# as the other lr sweeps
+success_rate_thresholds:
+  - 0.35
+  - 0.40
+  - 0.42

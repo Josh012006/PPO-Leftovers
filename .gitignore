@@ -38,8 +38,8 @@ htmlcov/
 .DS_Store
 Thumbs.db
 
-# Notes personnelles
-Thinking-process.txt
-
 # Logs
 *.log
+
+# Notes personnelles et autre outils pour analyse
+comprehension-helpers/
