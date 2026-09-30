@@ -132,6 +132,26 @@ $$
 
 The important idea is not whether the neighborhood is implemented with a hard ball or a Gaussian kernel. The important idea is that **the count measures local coverage in state-action space rather than exact duplicate occurrences**.
 
+### Separate bandwidths for state and action
+
+The formulation above measures $d(x,x')$ as a single distance over the concatenated vector $[s;a]$, with one bandwidth $h$. This conflates two different notions of closeness: state and action spaces generally have different natural scales and dimensions, so "same state, different action" and "different state, same action" are not comparable through a single joint distance.
+
+The kernel factorizes cleanly into a product over the state part and the action part:
+
+$$
+\boxed{
+K(x,x_i) = K_s\!\big(d(s,s_i)\big)\cdot K_a\!\big(d(a,a_i)\big),
+\qquad
+K_s(r)=e^{-r^2/2h_s^2},
+\quad
+K_a(r)=e^{-r^2/2h_a^2},
+}
+$$
+
+with independent bandwidths $h_s$, $h_a$, giving the same soft local count as before, $n_h(x)=\sum_i K(x,x_i)$. The single joint kernel above is the special case $h_s=h_a=h$ with $s$ and $a$ pre-concatenated. Letting either bandwidth go to zero recovers exact matching on that side alone while the other stays smoothed: $h_a\to0$ gives exact action matching with a smoothed state (the discrete-action case this project's own environments use), and symmetrically for $h_s\to0$.
+
+None of Sections 5-15 depend on which distance or kernel produced $n_\epsilon(x)$ or $n_h(x)$ -- every subsequent property ($1\le E_\beta(n)\le n$, the bounded compression, the four-case analysis) holds for any valid local count, this factorized one included.
+
 ---
 
 ## 3. Standard empirical PPO distribution
@@ -1225,156 +1245,3 @@ A distinction sharpens what actually separates the two cases: **whether the low-
 - If $z(x)$ is *biased* at low-coverage regions -- systematically wrong, not just uncertain -- then no amount of further SGD averaging removes that error on its own; more weight on the correction is exactly the lever that helps, since the error is not something the optimizer would otherwise wash out for free. This is Case 3.
 
 This project's own disagreement-factor analysis (fixed-D PPO on the controlled maze; see the README) gives a direct, empirical answer for this project's own setting: `log_pair_min_samples` -- essentially $-\log n_\epsilon(s,a)$ -- is the dominant factor explaining *where* the trained policy disagrees with the oracle $\pi_{D^*}$, net of coverage and of the behavior policy's own preference. A factor that reliably predicts *where* an error occurs is evidence of a systematic relationship between coverage and correctness, not of unpredictable noise: pure noise would not produce a clean, dominant explanatory factor at all. In this project's own regime -- a single critic, frozen once per fixed window, its own generalization from better-covered neighboring states filling in for what a low-coverage region never got its own gradient signal to correct -- this is exactly the mechanism that would produce a systematic, not merely noisy, error at low coverage. That supports Case 3 as the regime this project's own results were obtained in, though it remains an empirical finding specific to this setting, not a claim that Case 3 dominates for every RL problem effective-count reweighting might be applied to.
-
----
-
-## 16. Increasing $\beta$ During Training
-
-The parameter $\beta$ controls the strength of this compression.
-
-Recall that
-
-$$
-E_\beta(n) =
-\frac{1-\beta^n}{1-\beta}.
-$$
-
-For a fixed $n$,
-
-$$
-\lim_{\beta\rightarrow1}E_\beta(n)=n.
-$$
-
-Therefore, increasing $\beta$ progressively weakens the correction and brings the effective count closer to the raw count.
-
-This suggests using a time-dependent parameter,
-
-$$
-\beta=\beta_t,
-$$
-
-that increases during training:
-
-$$
-\beta_0<\beta_1<\cdots<\beta_T<1.
-$$
-
-The intuition is to apply stronger coverage correction early in training and progressively relax it later.
-
-### Early training
-
-At the beginning of training, highly covered regions may dominate the gradient simply because of their large empirical frequency.
-
-A smaller $\beta$ produces stronger saturation:
-
-$$
-E_{\beta_{\mathrm{early}}}(n)\ll n
-$$
-
-for large $n$.
-
-This can reduce the dominance of redundant regions and give less-covered parts of the dataset more relative influence.
-
-The goal is not to amplify rare samples beyond their empirical presence, but rather to prevent highly repeated samples from overwhelming them.
-
-### Later training
-
-As training progresses, one may want to rely increasingly on the empirical distribution itself.
-
-By increasing $\beta_t$,
-
-$$
-\beta_t\rightarrow1,
-$$
-
-we obtain
-
-$$
-E_{\beta_t}(n)\rightarrow n
-$$
-
-and therefore
-
-$$
-f_{\beta_t}(n) =
-\frac{E_{\beta_t}(n)}{n}
-\rightarrow1.
-$$
-
-The reweighting consequently becomes progressively weaker.
-
-Conceptually, this gives the training process a gradual transition:
-
-$$
-\boxed{
-\text{strong coverage correction}
-\longrightarrow
-\text{weaker coverage correction}
-\longrightarrow
-\text{raw empirical weighting}
-}
-$$
-
-This can be useful when we believe that early optimization benefits from reducing coverage-induced imbalance, while later optimization should increasingly exploit the empirical distribution once the policy has already adapted.
-
-### Example schedule
-
-A simple linear schedule is
-
-$$
-\beta_t =
-\beta_{\min} +
-\frac{t}{T}
-\left(
-\beta_{\max}-\beta_{\min}
-\right),
-\qquad
-0\leq t\leq T.
-$$
-
-For example,
-
-$$
-\beta_{\min}=0.9,
-\qquad
-\beta_{\max}=0.999.
-$$
-
-A slower schedule could maintain stronger correction during a larger portion of training:
-
-$$
-\beta_t =
-\beta_{\min} +
-(\beta_{\max}-\beta_{\min})
-\left(\frac{t}{T}\right)^k,
-\qquad
-k>1.
-$$
-
-The precise schedule would remain an empirical question.
-
-Most importantly, changing $\beta$ over time does not remove the bounded nature of the method. At every training step for which
-
-$$
-0\leq\beta_t<1,
-$$
-
-we still have
-
-$$
-1\leq E_{\beta_t}(n)\leq n.
-$$
-
-Thus, an adaptive $\beta$ changes **how strongly we compress the coverage imbalance**, without changing the fundamental safety property of the effective-count formulation.
-
-The resulting idea is therefore not simply to choose the "right" $\beta$, but potentially to treat $\beta$ itself as part of the training schedule:
-
-$$
-\boxed{
-\beta_t\uparrow1
-\quad\Longrightarrow\quad
-\text{progressively less coverage correction}
-}
-$$
-
-This provides a natural mechanism for moving from a more coverage-aware optimization early in training toward a weighting that more closely follows the original empirical distribution later.
