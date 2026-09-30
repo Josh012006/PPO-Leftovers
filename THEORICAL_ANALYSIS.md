@@ -251,17 +251,19 @@ with different meanings:
 
 The goal is **not** to claim that $q_\beta$ is automatically equal to $d^{\pi_\theta}$. Rather, the theoretical question is whether replacing raw frequency by effective local coverage can produce a more useful approximation of the state-action structure relevant to the RL objective.
 
-### 4.1 Closing the chain: $q_\beta$ targets $d^{\pi_{\mathrm{prior}}}$, not $d^{\pi_\theta}$ directly
+### 4.1 Closing the chain: what a departure from $p_D$ can still mean for $\pi_\theta$
 
-The chain in the box above, $d^{\pi_\theta}\to p_D\to q_\beta$, is stated schematically but never closed: nothing so far relates $q_\beta$, a transform of the *fixed* dataset $D$, to $d^{\pi_\theta}$, the visitation distribution of the *current, still-changing* policy. Asking $q_\beta$ to approximate $d^{\pi_\theta}$ directly is asking it to approximate a moving target it cannot observe.
+The chain in the box above, $d^{\pi_\theta}\to p_D\to q_\beta$, is stated schematically but never closed: nothing so far relates $q_\beta$, a transform of the *fixed* dataset $D$, to $d^{\pi_\theta}$, the visitation distribution of the *current, still-changing* policy.
 
-The chain closes if it is split in two, using a result already standard in the trust-region literature that motivates PPO itself (Kakade & Langford, 2002; used in this form in Schulman et al., 2015, the TRPO paper). If
+**A first attempt at closing it is wrong, and worth stating explicitly so it is not repeated.** $p_D$ is already the standard, consistent statistical estimator of $d^{\pi_{\mathrm{prior}}}$ -- by the law of large numbers, $p_D\to d^{\pi_{\mathrm{prior}}}$ as $N\to\infty$, exactly, with no correction needed. $q_\beta$ does not converge to $d^{\pi_{\mathrm{prior}}}$ even in that limit: since $E_\beta(n)\to\frac{1}{1-\beta}$ as $n\to\infty$ for any fixed $\beta<1$, a region's effective mass saturates at a finite constant no matter how much data accumulates there. $q_\beta$ therefore does not approximate $d^{\pi_{\mathrm{prior}}}$ better than $p_D$ does -- it departs from it, permanently and by construction, regardless of sample size. This is not a flaw to patch; it is exactly what Cui et al.'s class-balanced loss already does in classification: it never tries to better estimate the true class distribution (the raw empirical frequency already does that optimally) -- it deliberately reweights away from that empirical distribution because the distribution itself, however well estimated, is judged not to be the right thing to optimize against directly. $q_\beta$ makes the same kind of choice, not a better version of the same estimation problem $p_D$ already solves.
+
+Given that, the trust-region bound below does not establish "$q_\beta$ is a better estimate of $d^{\pi_\theta}$." It establishes something more modest, but still useful: that the *geometric structure* $q_\beta$'s departure is built from -- which regions of $D$ are locally dense versus locally rare -- does not become a stale description of $\pi_\theta$'s own situation just because $\pi_\theta$ is no longer $\pi_{\mathrm{prior}}$. If
 
 $$
 \alpha=\max_s D_{TV}\!\left(\pi_\theta(\cdot\mid s),\ \pi_{\mathrm{prior}}(\cdot\mid s)\right)
 $$
 
-is bounded, then the two policies' visitation distributions are close:
+is bounded, then (Kakade & Langford, 2002; used in this form in Schulman et al., 2015, the TRPO paper) the two policies' visitation distributions are close:
 
 $$
 \boxed{
@@ -271,23 +273,7 @@ $$
 }
 $$
 
-This lets the problem be split into two separate questions, each with its own, already-available answer:
-
-$$
-\boxed{
-d^{\pi_{\mathrm{prior}}}
-\ \xrightarrow{\ \text{finite-sample estimation}\ }\
-p_D
-\ \xrightarrow{\ \text{effective-count reweighting}\ }\
-q_\beta,
-\qquad\qquad
-d^{\pi_{\mathrm{prior}}}
-\ \xrightarrow{\ \alpha\text{ small}\ }\
-d^{\pi_\theta}.
-}
-$$
-
-$q_\beta$'s job is only the first arrow: to be a better estimate of $d^{\pi_{\mathrm{prior}}}$ -- a fixed, well-defined object -- than the raw finite-sample count $p_D$ is. This is a statistical estimation question, exactly what effective-count reweighting is built to address (Sections 5-15). The second arrow is not $q_\beta$'s responsibility at all; it is controlled by keeping $\alpha$ small, which is precisely what PPO's clipping mechanism (and, in this project's own KL-anchored decay, the anchor itself) already exists to do.
+A region that $D$ shows as locally dense under $\pi_{\mathrm{prior}}$ is therefore still, approximately, a locally dense region under $\pi_\theta$'s own visitation, and likewise for a locally rare one -- as long as $\alpha$ stays small. The reweighting choice $q_\beta$ makes about *which regions deserve relatively less or more influence* is a choice about that shared geometric structure, not about $\pi_{\mathrm{prior}}$ specifically -- and the bound is what keeps that structure from having quietly become a description of a policy $\pi_\theta$ no longer resembles. Whether departing from $p_D$ in the direction $q_\beta$ chooses is itself a *good* choice is a separate question, addressed empirically in Section 15 and its own limits, not something this bound speaks to.
 
 **This closure is conditional, not unconditional**, and honestly so: the bound degrades as $\alpha$ grows, exactly when $\pi_\theta$ drifts away from $\pi_{\mathrm{prior}}$. This project's own empirical work gives a direct, observable proxy for when that is happening: a sustained rise in `clip_frac` signals that $\alpha$ is no longer small, since `clip_frac` measures the fraction of samples where the policy ratio has left the trust region clipping is meant to enforce. The chain above should therefore be read as holding *while `clip_frac` stays low* -- not as an unconditional guarantee, but as a precise statement of the one condition under which it is a guarantee at all.
 
