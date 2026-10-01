@@ -4,13 +4,20 @@
 # current policy, trains for epochs_per_window gradient epochs, and
 # carries the result forward as the start of the next window.
 #
-# Budget (chosen here, not yet validated -- a new kind of run for this
-# project): 50 windows x 100 episodes collected x 30 gradient epochs =
-# 5,000 episodes collected and 1,500 cumulative gradient epochs total,
-# evaluated every 5 windows.
+# Multi-seed, longer-budget follow-up to a first 1-seed, 50-window run:
+# that run found lr=0.0003 too slow to show any learning in this budget
+# (dropped here), and a ranking between modes that REVERSED between
+# lr=0.001 (none finished highest) and lr=0.002 (kl_anchored finished
+# highest) -- this run (5 seeds, num_windows raised 50 -> 200) is what
+# tells a genuine failure mode of the weighting mechanism apart from one
+# seed's own unlucky trajectory.
+#
+# Budget per run: 200 windows x 100 episodes collected x 30 gradient
+# epochs = 20,000 episodes collected, 6,000 cumulative gradient epochs,
+# evaluated every 5 windows (40 evaluation points per run).
 
 episodes_per_window: 100
-num_windows: 50
+num_windows: 200
 epochs_per_window: 30
 eval_every_windows: 5
 
@@ -39,8 +46,9 @@ modes:
   - constant
   - kl_anchored
 
+# lr=0.0003 dropped: the first, 1-seed/50-window run already established
+# it as too slow to show any learning at all in this budget.
 learning_rates:
-  - 0.0003
   - 0.001
   - 0.002
 

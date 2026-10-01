@@ -23,43 +23,45 @@ identical distinction, here applied per-window instead of once):
   kl_anchored -- same, but effective_sample_kl_anchor=True, k=0.10 --
                  decaying WITHIN each window as that window's own KL
                  grows, resetting fresh at the start of the next window
-                 (pi_old just changed), matching the design decision from
-                 the conversation that motivated this script: intra-
-                 window KL accumulation, not a KL that persists across
-                 windows.
+                 (pi_old just changed).
+
+MULTI-SEED VALIDATION. A first 1-seed, 50-window run at lr in {0.0003,
+0.001, 0.002} found lr=0.0003 too slow for this budget to show any
+learning at all, and -- at the two lr that DID show real learning -- a
+ranking between modes that reversed between lr=0.001 (none finished
+highest) and lr=0.002 (kl_anchored finished highest), with swings between
+evaluation points (e.g. 0.80 -> 0.32 -> 0.50 across three consecutive
+evaluations for kl_anchored at lr=0.001) far too large to be explained by
+eval_episodes=500's own sampling noise (expected stderr ~0.02) -- i.e.
+real, not measurement, volatility. This run is the multi-seed, longer-
+budget follow-up needed to tell a genuine failure mode of the weighting
+mechanism in this realistic regime apart from one seed's own unlucky
+trajectory: lr in {0.001, 0.002} only (0.0003 already established as too
+slow to be informative), 5 seeds, num_windows raised from 50 to 200.
 
 EVALUATION METRIC: a single, plain success_rate (evaluate_policy, the
 env's own default start-state reset), NOT this project's usual
-weighted_success_rate. The covered/held-out split that metric blends in
-exists specifically to catch overfitting to a FIXED dataset D whose
-start-state coverage was deliberately skewed at collection time (see
-README, "Our new starting point") -- it has no referent here: every
-window's data is freshly collected under the env's own default reset, not
-a skewed tiered sampler, so there is no fixed, coverage-biased D to test
-generalization against. Blending in "covered"/"held-out" numbers that
-don't correspond to anything about this training process would be
-reporting a composite designed for a different paradigm, not just an
-unnecessary 3x evaluation cost.
+weighted_success_rate -- the covered/held-out split has no referent in a
+loop where every window's data is freshly collected under the env's own
+default reset, not a fixed, deliberately-skewed dataset D.
 
 DETERMINISM: evaluate_policy reseeds its own RNG fresh
 (np.random.default_rng(seed)) on every call, so repeated evaluations at
-different windows with the same eval_seed (999 here, matching every other
-evaluation in this project) are fully reproducible given the same policy
-weights -- verified directly against evaluate_policy's own source, not
-assumed.
+different windows with the same eval_seed are fully reproducible given the
+same policy weights -- verified directly against evaluate_policy's own
+source. eval_seed is deliberately set to a value distinct from 999 (used
+everywhere else in this project, always for the fixed-D, tiered-coverage
+evaluation this experiment does not use), to mark this from-scratch
+multi-window track as its own thing.
 
-Default budget (chosen here, not yet validated -- this is a new kind of
-run for this project): 100 episodes collected per window, 50 windows,
-epochs=30 per window (this project's realistic-scale target), evaluated
-every 5 windows (500 episodes, eval_seed=999). Total over a full run:
-5,000 episodes collected, 1,500 cumulative gradient epochs -- comparable
-in order of magnitude to this project's earlier single-window results,
-built up progressively instead of on one frozen dataset.
+Budget per run (configs/phase3/realistic_training_sweep.yaml): 100
+episodes collected per window, 200 windows, epochs=30 per window,
+evaluated every 5 windows. Total over a full run: 20,000 episodes
+collected, 6,000 cumulative gradient epochs.
 
-Reads all settings from a YAML config (see configs/phase3/
-realistic_training_sweep.yaml) except --seeds, --out-dir, --cpu-count and
---force, which stay as command-line flags, matching this project's other
-sweep scripts.
+Reads all settings from a YAML config except --seeds, --out-dir,
+--cpu-count and --force, which stay as command-line flags, matching this
+project's other sweep scripts.
 
 Parallel execution, resumability, per-combination logging mirror this
 project's other sweep scripts (spawn context, --cpu-count clamped to
@@ -71,9 +73,9 @@ Usage:
     python scripts/run_realistic_multiwindow_sweep.py \
         --config configs/phase3/realistic_training_sweep.yaml \
         --env-config configs/phase2/env_maze.yaml \
-        --seeds 0 \
+        --seeds 0 1 2 3 4 \
         --out-dir results/phase3/analysis/realistic_multiwindow_sweep \
-        --cpu-count 9
+        --cpu-count 10
 """
 from __future__ import annotations
 
@@ -365,8 +367,14 @@ def main():
     ok = summary_df[summary_df["status"].isin(["ran", "skipped (already existed)"])] if not summary_df.empty else summary_df
     if not ok.empty:
         crossing_cols = [c for c in ok.columns if c.startswith("window_at_")]
-        print("\n=== By mode and learning rate ===")
-        print(ok.sort_values(["lr", "mode"])[["mode", "lr", "seed"] + crossing_cols + ["mean", "best", "best_window", "final"]].to_string(index=False))
+        print("\n=== Every run ===")
+        print(ok.sort_values(["lr", "mode", "seed"])[["mode", "lr", "seed"] + crossing_cols + ["mean", "best", "best_window", "final"]].to_string(index=False))
+
+        if ok["seed"].nunique() > 1:
+            print("\n=== Aggregated across seeds, by mode and learning rate (mean_of_means / std_of_means / n_seeds) ===")
+            agg = ok.groupby(["lr", "mode"])["mean"].agg(["mean", "std", "count"])
+            agg.columns = ["mean_of_means", "std_of_means", "n_seeds"]
+            print(agg.round(4).to_string())
     print(f"\nSaved combined summary to {summary_path}")
 
 
