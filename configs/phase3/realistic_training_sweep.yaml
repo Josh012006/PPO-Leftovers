@@ -1,0 +1,50 @@
+# Full, from-scratch, multi-window PPO training -- not this project's
+# fixed-D single-window protocol. Random initialization, no prior
+# checkpoint; each window collects its own fresh rollout under the
+# current policy, trains for epochs_per_window gradient epochs, and
+# carries the result forward as the start of the next window.
+#
+# Budget (chosen here, not yet validated -- a new kind of run for this
+# project): 50 windows x 100 episodes collected x 30 gradient epochs =
+# 5,000 episodes collected and 1,500 cumulative gradient epochs total,
+# evaluated every 5 windows.
+
+episodes_per_window: 100
+num_windows: 50
+epochs_per_window: 30
+eval_every_windows: 5
+
+minibatch_size: 256
+clip_eps: 0.55
+gae_lambda: 0.90
+hidden_sizes: [64, 64]
+
+bandwidth_state: 1.0e-6   # "constant" and "kl_anchored" modes
+bandwidth_action: 1.0e-6
+kernel: gaussian
+
+beta: 0.9995     # "constant" and "kl_anchored" modes
+kl_k: 0.10       # "kl_anchored" mode only
+
+eval_episodes: 500
+# Deliberately a NEW seed, distinct from 999 (used everywhere else in this
+# project, always for the old fixed-D, tiered-coverage evaluation this
+# experiment does not use) -- marks this from-scratch multi-window track
+# as its own thing, not directly numerically comparable epoch-for-epoch
+# to earlier results.
+eval_seed: 424242
+
+modes:
+  - none
+  - constant
+  - kl_anchored
+
+learning_rates:
+  - 0.0003
+  - 0.001
+  - 0.002
+
+success_rate_thresholds:
+  - 0.35
+  - 0.40
+  - 0.42

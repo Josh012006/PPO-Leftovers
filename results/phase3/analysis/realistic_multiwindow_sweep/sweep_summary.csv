@@ -1,0 +1,10 @@
+seed,mode,lr,mean,best,best_window,final,window_at_0.35,window_at_0.4,window_at_0.42,csv_path,status,log_path
+0,none,0.001,0.3721818181818182,0.814,50,0.814,30.0,30.0,30.0,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_none_lr_0_001.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_none_lr_0_001.log
+0,none,0.002,0.19272727272727275,0.444,45,0.14,35.0,45.0,45.0,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_none_lr_0_002.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_none_lr_0_002.log
+0,none,0.0003,0.03290909090909091,0.134,35,0.038,,,,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_none_lr_0_0003.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_none_lr_0_0003.log
+0,constant,0.001,0.2187272727272727,0.516,50,0.516,30.0,30.0,30.0,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_constant_lr_0_001.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_constant_lr_0_001.log
+0,constant,0.0003,0.05636363636363637,0.076,45,0.068,,,,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_constant_lr_0_0003.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_constant_lr_0_0003.log
+0,constant,0.002,0.10181818181818182,0.294,40,0.262,,,,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_constant_lr_0_002.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_constant_lr_0_002.log
+0,kl_anchored,0.001,0.34636363636363643,0.802,35,0.496,25.0,25.0,25.0,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_kl_anchored_lr_0_001.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_kl_anchored_lr_0_001.log
+0,kl_anchored,0.002,0.24072727272727273,0.564,50,0.564,30.0,30.0,30.0,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_kl_anchored_lr_0_002.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_kl_anchored_lr_0_002.log
+0,kl_anchored,0.0003,0.0005454545454545455,0.002,20,0.0,,,,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_kl_anchored_lr_0_0003.csv,ran,results\phase3\analysis\realistic_multiwindow_sweep\seed_0_kl_anchored_lr_0_0003.log
