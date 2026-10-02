@@ -4,13 +4,12 @@
 # current policy, trains for epochs_per_window gradient epochs, and
 # carries the result forward as the start of the next window.
 #
-# Multi-seed, longer-budget follow-up to a first 1-seed, 50-window run:
-# that run found lr=0.0003 too slow to show any learning in this budget
-# (dropped here), and a ranking between modes that REVERSED between
-# lr=0.001 (none finished highest) and lr=0.002 (kl_anchored finished
-# highest) -- this run (5 seeds, num_windows raised 50 -> 200) is what
-# tells a genuine failure mode of the weighting mechanism apart from one
-# seed's own unlucky trajectory.
+# Now includes two beta-start schedule modes (linear_beta_schedule,
+# success_rate_beta_schedule) on top of the three already validated
+# (none, constant, kl_anchored), to see whether scheduling the STARTING
+# beta across windows -- rather than holding it fixed at 0.9995 forever
+# -- stabilizes training. See scripts/run_realistic_multiwindow_sweep.py's
+# own docstring for exactly how each schedule works.
 #
 # Budget per run: 200 windows x 100 episodes collected x 30 gradient
 # epochs = 20,000 episodes collected, 6,000 cumulative gradient epochs,
@@ -26,27 +25,40 @@ clip_eps: 0.55
 gae_lambda: 0.90
 hidden_sizes: [64, 64]
 
-bandwidth_state: 1.0e-6   # "constant" and "kl_anchored" modes
+bandwidth_state: 1.0e-6   # every weighted mode
 bandwidth_action: 1.0e-6
 kernel: gaussian
 
-beta: 0.9995     # "constant" and "kl_anchored" modes
-kl_k: 0.10       # "kl_anchored" mode only
+beta: 0.9995           # "constant" and "kl_anchored" modes (fixed, never scheduled)
+kl_k: 0.10             # every mode with intra-window KL-anchoring (kl_anchored + both schedule modes)
+
+# the two NEW schedule modes only:
+beta_init: 0.9995      # starting beta at window 0 (both schedules)
+beta_target: 0.99999   # target beta the schedules drift toward -- deliberately NOT exactly 1.0
+                        # (an earlier intra-window anneal hitting beta=1.0 exactly caused an
+                        # outright collapse rather than a graceful return to baseline -- see README)
+schedule_step_frac: 0.10     # success_rate_beta_schedule only: each move covers this fraction
+                              # of the remaining gap to whichever bound applies
+schedule_history_len: 3      # success_rate_beta_schedule only: consecutive windows required,
+                              # all moving the same direction, before beta moves at all
+
+late_window_fraction: 0.25   # for late_mean/late_std: fraction of evaluation points (from the
+                              # end) treated as "the plateau" -- NOT the full-trajectory mean
 
 eval_episodes: 500
 # Deliberately a NEW seed, distinct from 999 (used everywhere else in this
 # project, always for the old fixed-D, tiered-coverage evaluation this
-# experiment does not use) -- marks this from-scratch multi-window track
-# as its own thing, not directly numerically comparable epoch-for-epoch
-# to earlier results.
+# experiment does not use).
 eval_seed: 424242
 
 modes:
   - none
   - constant
   - kl_anchored
+  - linear_beta_schedule
+  - success_rate_beta_schedule
 
-# lr=0.0003 dropped: the first, 1-seed/50-window run already established
+# lr=0.0003 dropped: an earlier 1-seed/50-window run already established
 # it as too slow to show any learning at all in this budget.
 learning_rates:
   - 0.001
