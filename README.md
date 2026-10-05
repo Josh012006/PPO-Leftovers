@@ -538,6 +538,119 @@ for long stretches, `pi_beta`'s own starting performance (0.3125). `lr=0.002` an
 `lr=0.004` never reach a useful level at all. `lr=0.0006` is the steadiest of the
 four faster rates -- it never collapses -- but does not clear 0.42 by epoch 25 either.
 
+#### Confirmatory test: does the method help in realistic training from scratch?
+
+The sweep above is exploratory: one seed, fixed-D protocol (a frozen window started from a prior).
+To know whether the method helps in an actual training loop, we ran the loop itself. A first
+exploratory run with 5 seeds suggested a benefit, so we then ran a separate **confirmatory** experiment
+whose protocol was fixed before looking at its results (`scripts/run_confirmatory_ablation.py`,
+`configs/phase3/confirmatory_ablation.yaml`).
+
+**The training loop.** Random initialization, no prior checkpoint. At each window: collect 100 fresh
+episodes with the current policy, run 30 epochs of PPO on them, carry the weights to the next window.
+200 windows, evaluated every 5 windows on 500 episodes (deterministic policy, fixed evaluation seed
+424242). The metric is a plain `success_rate`: the covered / held-out split of Phase 2 has no meaning
+here, because there is no frozen and deliberately skewed `D` to test generalization against. For the
+weighted arm, the local count (near-exact bandwidths) is recomputed from each window's own data, so
+that `pi_prior` is exactly the `pi_old` of that window.
+
+**What was fixed in advance.**
+- `lr = 0.001`, chosen from the exploratory runs and not re-swept here.
+- A 2x2 ablation: hyperparameters {PPO defaults, our tuned values} x method {none, `kl_anchored` with
+  `beta = 0.9995`, `k = 0.10`}. Defaults are the usual PPO ones (`clip_eps=0.2`, `gae_lambda=0.95`,
+  `value_coef=0.5`, `max_grad_norm=0.5`); ours are the values selected in Phase 2
+  (`0.55`, `0.90`, `1.0`, `0.1`).
+- 50 seeds per cell, i.e. 200 runs (545 minutes on 5 CPUs). Paired by seed: the same seed gives the
+  same initialization to the four cells.
+- Metrics: `best` (best evaluation of the run) and `late_mean` (mean over the last 25% of the
+  evaluation points, i.e. the plateau; the mean over the whole trajectory is not used because it blends in
+  the random-initialization warm-up every run starts from).
+- Tests: Wilcoxon signed-rank on the paired differences, bootstrap 95% CI of their mean, win rate, and the
+  interquartile mean (IQM, the mean of the values between the 25th and 75th percentiles), which is
+  less sensitive than the plain mean to the occasional seed that fails to take off.
+
+**Results** (50 seeds per cell).
+
+<div align="center">
+
+| hyperparameters | method | `best` mean (IQM) | `late_mean` mean (IQM) |
+|---|---|---|---|
+| default | none | 0.8715 (0.9193) | 0.8244 (0.8745) |
+| default | `kl_anchored` | 0.8930 (0.9197) | 0.8395 (0.8709) |
+| tuned | none | 0.7423 (0.8283) | 0.5302 (0.5659) |
+| tuned | `kl_anchored` | 0.7457 (0.8266) | 0.5301 (0.5678) |
+
+</div>
+
+<div align="center">
+
+| paired comparison | metric | mean difference | 95% CI | wins | Wilcoxon p |
+|---|---|---|---|---|---|
+| method effect, default HP | `best` | +0.022 | [-0.030, +0.072] | 25/50 | 0.51 |
+| method effect, tuned HP | `best` | +0.003 | [-0.054, +0.061] | 26/50 | 0.93 |
+| method effect, default HP | `late_mean` | +0.015 | [-0.034, +0.063] | 27/50 | 0.66 |
+| method effect, tuned HP | `late_mean` | -0.000 | [-0.046, +0.044] | 24/50 | 0.75 |
+| tuned vs default, no method | `best` | -0.129 | [-0.200, -0.059] | 9/50 | 0.0003 |
+| tuned vs default, with method | `best` | -0.147 | [-0.212, -0.087] | 4/50 | < 0.0001 |
+| tuned vs default, no method | `late_mean` | -0.294 | [-0.353, -0.235] | 3/50 | < 0.0001 |
+| tuned vs default, with method | `late_mean` | -0.309 | [-0.360, -0.259] | 1/50 | < 0.0001 |
+
+</div>
+
+<div align="center">
+<img src="results/phase3/analysis/confirmatory_ablation/confirmatory_means_and_paired.png" width="95%"><br><em>Left: mean success rate over the 50 seeds (shaded: bootstrap 95% CI of the mean). Right: per-seed paired difference (method minus no method); black: mean and 95% CI.</em>
+</div>
+
+**The method: a slight edge in the plain mean, not distinguishable from zero.** At default
+hyperparameters the plain mean is slightly in favour of the method (+0.022 on `best`, +0.015 on
+`late_mean`), but every confidence interval contains zero, the win rate is about 50%, and the sign of the
+difference changes with the statistic used (mean, IQM or median). With 50 seeds, the smallest effect
+we could detect with 80% power is about 0.07 (the standard deviation of the paired differences is
+0.17 to 0.21). So an effect of several points of success rate in either direction cannot be excluded,
+and we do not claim an improvement. What these runs do exclude is an effect of the size suggested by the
+5-seed exploratory run.
+
+**Why the 5-seed run was misleading.** Its five seeds are seeds 0 to 4, and they are reproduced bit for
+bit in this run. On them, the method beats the baseline on all 5 seeds with a mean `late_mean`
+difference of +0.120 (tuned HP). On the 45 other seeds the mean difference is -0.014 (19 wins out
+of 45). A draw of 5 seeds this favourable happens in about 1% of random draws. We had also underestimated
+the variance: the standard deviation of the paired difference is 0.17 over 50 seeds, against 0.06 to 0.11 in
+the pilot.
+
+**Hyperparameter tuning from the fixed-D regime does not transfer.** The PPO defaults beat our tuned values
+by 0.13 to 0.15 on `best` and by 0.29 to 0.31 on `late_mean` (p < 0.001, and the tuned values win on
+at most 9 seeds out of 50 in any comparison). The tuned values were selected for the fixed-D protocol,
+a single frozen window of 300 epochs started from a prior. They are a poor choice in a real training loop
+with fresh data, whether the method is used or not. A plausible reason (not tested) is that a loose clip
+range combined with many epochs lets the policy move too far within a window. Note also that `lr = 0.001`
+was itself selected under the tuned values, which, if anything, favours the tuned profile in this comparison.
+
+**Limits of this result.**
+- At default hyperparameters the baseline reaches about 0.9 at the median after roughly 60 windows, so the
+  test is less sensitive there.
+- `best` is an optimistic number: the best of 41 evaluations is selected and reported on the same 500
+  evaluation episodes. Evaluation noise alone can add up to about 0.03 to 0.05 (an upper bound, since the
+  fixed evaluation seed correlates the noise across evaluations), and `best` also rewards
+  window-to-window volatility. `late_mean` is the less biased criterion. No checkpoint was saved, so the
+  best checkpoint could not be re-evaluated on fresh episodes.
+- The fixed evaluation seed means all runs are scored on the same 500 episodes (same start states, same
+  slip noise). This is a variance reduction for comparisons, but the sampling error of that one draw
+  (about 0.02) is shared by all runs and is not averaged out by the seeds.
+- One maze, one set of 12 start states, used for both training and evaluation: this measures how well a
+  given maze is learned, not generalization.
+- All the fixed-D experiments of Phases 2 and 3 use the same dataset `D` and the same prior checkpoint, so
+  their seeds replicate the training but not the choice of `D` and prior.
+
+**What this leads to.** The mechanism was developed, and showed its gain, in a very specific regime:
+a frozen dataset reused for 300 epochs while the policy drifts away from the one that collected it.
+The loop tested above is the opposite situation: 100 fresh episodes and only 30 epochs per window. One
+reading (a hypothesis, not tested) is that with fresh on-policy data the empirical distribution is already
+the right one for the gradient, so there is no imbalance for the weighting to correct (see
+`THEORICAL_ANALYSIS.md`, Section 4.1: `q_beta` is a deliberate departure from `p_D`, not a better
+estimate of it). The next step is therefore to test whether, at least in the regime we studied, the method
+brings a real improvement: from-scratch training with a heavy reuse of each window's data (many epochs per
+window), with the protocol and the decision rule written down before running it.
+
 
 ## Project structure
 

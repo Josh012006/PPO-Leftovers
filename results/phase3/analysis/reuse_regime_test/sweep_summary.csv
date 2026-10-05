@@ -1,0 +1,6 @@
+seed,arm,late_mean,late_std,best,best_window,best_reeval,final,csv_path,status,log_path
+3,none,0.50525,0.004773438413315325,0.514,42,0.48,0.512,results\phase3\analysis\reuse_regime_test\seed_3_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_3_none.log
+2,none,0.305,0.023880655650247853,0.34,24,0.334,0.334,results\phase3\analysis\reuse_regime_test\seed_2_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_2_none.log
+0,none,0.51175,0.005391792704790181,0.52,28,0.4865,0.51,results\phase3\analysis\reuse_regime_test\seed_0_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_0_none.log
+4,none,0.5267499999999999,0.1574327520834576,0.662,48,0.649,0.566,results\phase3\analysis\reuse_regime_test\seed_4_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_4_none.log
+1,none,0.29875,0.04469499812219325,0.34,46,0.3315,0.288,results\phase3\analysis\reuse_regime_test\seed_1_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_1_none.log

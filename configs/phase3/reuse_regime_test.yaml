@@ -1,0 +1,43 @@
+# Pre-registered test of the weighting mechanism in a HEAVY-REUSE regime.
+# See scripts/run_reuse_regime_test.py's docstring for the full rationale
+# and the decision rule. Nothing here may be changed after the main run
+# starts, including after seeing partial results. The only permitted change
+# is the one written into the feasibility pilot rule: if the baseline-only
+# pilot fails its check, num_windows may be raised to 100, once, before
+# the main run.
+
+lr: 0.001                  # unchanged from the confirmatory ablation
+
+num_windows: 60
+episodes_per_window: 100   # unchanged
+epochs_per_window: 300     # the ONLY thing that differs (30 in the ablation)
+eval_every_windows: 2      # 31 evaluation points, window 0 included
+
+minibatch_size: 256
+hidden_sizes: [64, 64]
+
+# kl_anchored arm only
+bandwidth_state: 1.0e-6
+bandwidth_action: 1.0e-6
+kernel: gaussian
+beta: 0.9995
+kl_k: 0.10
+
+late_window_fraction: 0.25   # primary metric: mean over the last 25% of evaluation points (8 of 31)
+
+eval_episodes: 500
+eval_seed: 424242            # same dedicated seed as the other from-scratch runs
+
+# Secondary metric: the best checkpoint of each run, re-evaluated on fresh
+# episodes with a different seed (removes the selection bias of `best`).
+reeval_episodes: 2000
+reeval_seed: 777777
+
+# Default PPO hyperparameters (the tuned profile did not transfer to
+# from-scratch training; see README).
+hp:
+  clip_eps: 0.2
+  gae_lambda: 0.95
+  entropy_coef: 0.0
+  value_coef: 0.5
+  max_grad_norm: 0.5
