@@ -1,0 +1,44 @@
+# Confirmatory ablation pipeline -- see scripts/run_confirmatory_ablation.py's
+# own docstring for the full pre-registration rationale. Nothing here
+# should be changed after the run starts, including after seeing partial
+# results.
+
+lr: 0.001   # FIXED -- chosen from prior exploratory sweeps, not re-tuned here
+
+num_windows: 200
+episodes_per_window: 100
+epochs_per_window: 30
+eval_every_windows: 5
+
+minibatch_size: 256
+hidden_sizes: [64, 64]
+
+bandwidth_state: 1.0e-6   # kl_anchored method only
+bandwidth_action: 1.0e-6
+kernel: gaussian
+beta: 0.9995              # kl_anchored method only
+kl_k: 0.10                # kl_anchored method only
+
+late_window_fraction: 0.25   # secondary metric: plateau over the last 25% of evaluation points
+
+eval_episodes: 500
+eval_seed: 424242   # same dedicated seed as the other from-scratch multi-window runs
+
+# The two hp_profiles the ablation crosses with method (none / kl_anchored).
+# "default" is Schulman et al. 2017 / Stable-Baselines3-style, NOT this
+# project's own tuned values -- deliberately different from "tuned" so the
+# ablation can separate the method's own effect from this project's
+# hyperparameter tuning.
+hp_profiles:
+  default:
+    clip_eps: 0.2
+    gae_lambda: 0.95
+    entropy_coef: 0.0
+    value_coef: 0.5
+    max_grad_norm: 0.5
+  tuned:
+    clip_eps: 0.55
+    gae_lambda: 0.90
+    entropy_coef: 0.0
+    value_coef: 1.0
+    max_grad_norm: 0.1
