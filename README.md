@@ -647,9 +647,126 @@ The loop tested above is the opposite situation: 100 fresh episodes and only 30 
 reading (a hypothesis, not tested) is that with fresh on-policy data the empirical distribution is already
 the right one for the gradient, so there is no imbalance for the weighting to correct (see
 `THEORICAL_ANALYSIS.md`, Section 4.1: `q_beta` is a deliberate departure from `p_D`, not a better
-estimate of it). The next step is therefore to test whether, at least in the regime we studied, the method
-brings a real improvement: from-scratch training with a heavy reuse of each window's data (many epochs per
-window), with the protocol and the decision rule written down before running it.
+estimate of it). We therefore tested whether, at least in the regime we studied, the method brings a real
+improvement: from-scratch training with a heavy reuse of each window's data (300 epochs per window), with the
+protocol and the decision rule written down before running it. The result is in the next subsection: it is
+a null.
+
+#### Heavy-reuse regime: a null result
+
+**Protocol** (`scripts/run_reuse_regime_test.py`, `configs/phase3/reuse_regime_test.yaml`; the settings are
+frozen in `frozen_config.json`, and the script refuses to start if they differ). Same loop as above, with
+a single change: **300 epochs per window instead of 30**, so that each batch of 100 fresh episodes is
+reused heavily, as in the regime where the mechanism was developed. 60 windows, evaluated every 2 windows
+(31 evaluation points) on 500 episodes (deterministic policy, evaluation seed 424242); PPO default
+hyperparameters, `lr = 0.001`; two arms, `none` and `kl_anchored` (`beta = 0.9995`, `k = 0.10`, local count
+at near-exact bandwidths recomputed from each window's data); 100 seeds per arm, paired by seed (200 runs).
+A baseline-only feasibility rule (median `late_mean` >= 0.30) was written down first so that a baseline
+that cannot learn in this budget would not be mistaken for a null; the baseline clears it (median 0.46), so
+`num_windows` stayed at 60.
+
+**Decision rule, fixed before the main run.** On the paired difference of `late_mean` (`kl_anchored` minus
+`none`, 95% bootstrap CI of the mean, Wilcoxon signed-rank): POSITIVE if the CI lies above 0 and p < 0.05;
+NEGATIVE if the CI lies below 0; NULL if the CI lies inside the equivalence margin of +-0.05; INCONCLUSIVE
+otherwise, in which case no seeds are added after looking. `best` and `best_reeval` (the best checkpoint
+re-evaluated on 2000 fresh episodes with a different seed) are secondary and carry no decision.
+
+**Result: NULL.**
+
+<div align="center">
+
+| metric | `none` | `kl_anchored` | mean difference | 95% CI | wins | Wilcoxon p |
+|---|---|---|---|---|---|---|
+| **`late_mean` (primary)** | 0.4476 | 0.4474 | -0.0001 | [-0.025, +0.025] | 50/100 | 0.87 |
+| `best` | 0.5101 | 0.5038 | -0.006 | [-0.039, +0.025] | 46/100 | 0.63 |
+| `best_reeval` | 0.4943 | 0.4863 | -0.008 | [-0.039, +0.024] | 46/100 | 0.43 |
+| mean over the whole trajectory | 0.3593 | 0.3599 | +0.001 | [-0.017, +0.018] | 49/100 | 0.81 |
+
+</div>
+
+<div align="center">
+<img src="results/phase3/analysis/reuse_regime_test/reuse_regime_means_and_paired.png" width="95%"><br><em>Left: mean success rate over the 100 seeds (shaded: bootstrap 95% CI of the mean); the grey band is the late window used by the primary metric. Middle: each seed's `late_mean` for the two arms (dashed: equality). Right: histogram of the paired differences, with the +-0.05 equivalence margin (green) and the 95% CI of the mean (red).</em>
+</div>
+
+The two mean curves overlap over the whole training. The 95% CI on the primary metric lies inside the
+equivalence margin, and is in fact about half as wide as the margin: the standard deviation of the paired
+difference is 0.13, so with 100 seeds an effect larger than about 0.025 in either direction is excluded on
+this maze, this loop and these hyperparameters. The IQM (0.440 against 0.451), the median (0.460 against
+0.484), the number of seeds that fail to take off (0 against 1) and the number that reach 0.5 or more (39
+against 38) tell the same story. The late-window `approx_kl` and `clip_frac` are also nearly identical (about
+0.10 and 0.27 in both arms), which is what we would expect if the weighting barely changes the update, but this
+is an observation, not a diagnosis (see the next steps).
+
+One statistic deserves a caveat rather than a conclusion: the *last* evaluation point alone is lower with the
+method (-0.029, CI [-0.060, +0.003], Wilcoxon p = 0.027). It is not the pre-registered metric, it is one of five
+statistics computed, it rests on a single noisy evaluation, and its CI contains zero. We do not read it as
+harm, and the pre-registered rule is the one that decides.
+
+Taken together with the 30-epoch ablation above, the method now shows **no detectable effect in either
+from-scratch regime** (30 and 300 epochs per window of fresh data). This is a statement about those regimes,
+this maze and these hyperparameters. It does not say the mechanism does nothing in the frozen-dataset
+protocol where it was developed, and it does not explain why it did nothing here: the reading "fresh on-policy
+data already has the right empirical distribution" remains an untested hypothesis.
+
+**Limits.** Same maze and same start states for training and evaluation (in-distribution); one fixed
+evaluation seed shared by all runs; `lr` and `beta`/`k` were not re-tuned for this regime (re-tuning on the same
+evaluation would reintroduce the selection problem described above); the arms share the same seed, hence the
+same initialization, which is why their per-seed results correlate (Pearson 0.58) and why the paired analysis is
+the right one.
+
+#### Next steps
+
+The aim now is to understand why the method fails here, and what actually justified the improvement we saw
+earlier, before developing it further.
+
+**1. Why does the method do nothing in this loop?** Three cheap diagnostics, in this order.
+- *Are the weights even different from uniform?* Log, per window, how far the effective weights `w(n)/n` are
+  from the empirical ones (share of samples whose weight changes by more than a given factor, effective
+  sample size ratio). If they are nearly uniform, the null is a mechanical consequence (the method is close to
+  a no-op on fresh data, consistent with the identical `approx_kl` and `clip_frac`). If they are far from
+  uniform and the result is still null, the weighting acts but does not help, which is a different
+  explanation.
+- *Is there an exploitation gap to close in this loop?* For each window, solve `pi_D*` of that window's data
+  exactly (value iteration is exact in the discrete maze) and compare it with the policy after the window's
+  update, i.e. apply the decomposition of the top of this README window by window. If the in-loop gap is
+  already small, no training-side method can reduce it. If it is large and unchanged by the method, the
+  weighting is not the right lever for that gap.
+- *Does the data's staleness matter?* The hypothesis is that the weighting helps when the empirical
+  distribution of `D` differs from the distribution of the current policy. This can be tested directly by
+  varying that quantity: reuse the data of the last `K` windows (a replay of increasingly stale data) and
+  see whether any `K` produces an effect.
+
+**2. What justified the earlier improvement?** The evidence for it came from the fixed-`D` protocol: one
+dataset, one prior, a single seed per configuration in the sweeps cited, and differences of the order of 0.01 to 0.02 (for example
+mean 0.4289 against 0.4127 and best 0.4845 against 0.4720 for `k = 0.10` against the baseline), to be compared
+with a standard deviation of 0.13 for the paired difference between seeds in the loops above and a
+standard deviation of 0.05 to 0.07 along a single run's trajectory. `beta` and `k` were also selected on the same `D` and the same
+evaluation seed. Three explanations, with different consequences, have to be separated:
+- *Noise and selection.* Replicate the fixed-`D` protocol with many seeds, several independently drawn
+  (`D`, prior) pairs, a fresh evaluation seed and a rule written down in advance. If the gain disappears, it
+  was not real.
+- *A real effect, specific to the frozen-`D` regime.* The finding is then narrow, and the contribution is to
+  characterize when it appears (see the staleness test above).
+- *A real effect that does not come from the counts.* Reweighting by `w(n)/n` also changes the scale of the
+  loss, which interacts with the learning rate (the learning-rate sweep showed the useful window moving with
+  `lr`). A control arm that keeps the same weight values but shuffles them across samples would show whether
+  the information carried by the counts matters, or only the rescaling.
+
+**3. Possible redirection of the question and of the method.**
+- *The question.* Moving from the fixed-`D` protocol to from-scratch training quietly changed the question from
+  "how much of the policy supported by `D` does PPO extract?" (the exploitation gap, measured against `pi_D*`)
+  to "does a PPO variant reach a higher success rate?". The second question has no frozen `D` and no `pi_D*`,
+  and it is the one the null answers. A more faithful reformulation is: in which regimes (data freshness, reuse,
+  coverage) is there an exploitation gap in a realistic PPO loop, and is it addressable? The method then
+  becomes one probe among others, and a characterization of those regimes, positive or negative, becomes the
+  result.
+- *The method of research.* From here on, a claim requires: a rule written before the run, many seeds,
+  several independent draws of the environment instance (a second maze layout; the continuous environment
+  is still to be chosen), a fresh evaluation seed, and `late_mean` or `best_reeval` rather than the best
+  evaluation. Success rate and gap closure against `pi_D*` should both be reported where `pi_D*` exists.
+- *To decide with the supervisor.* Whether to keep developing the method (conditional on the replication in
+  point 2 and on the staleness test in point 1), or to switch to the characterization track above, which the
+  existing negative results already support.
 
 
 ## Project structure
