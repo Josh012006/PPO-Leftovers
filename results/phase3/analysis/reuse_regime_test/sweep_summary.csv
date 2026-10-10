@@ -1,6 +1,201 @@
 seed,arm,late_mean,late_std,best,best_window,best_reeval,final,csv_path,status,log_path
-3,none,0.50525,0.004773438413315325,0.514,42,0.48,0.512,results\phase3\analysis\reuse_regime_test\seed_3_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_3_none.log
-2,none,0.305,0.023880655650247853,0.34,24,0.334,0.334,results\phase3\analysis\reuse_regime_test\seed_2_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_2_none.log
-0,none,0.51175,0.005391792704790181,0.52,28,0.4865,0.51,results\phase3\analysis\reuse_regime_test\seed_0_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_0_none.log
-4,none,0.5267499999999999,0.1574327520834576,0.662,48,0.649,0.566,results\phase3\analysis\reuse_regime_test\seed_4_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_4_none.log
-1,none,0.29875,0.04469499812219325,0.34,46,0.3315,0.288,results\phase3\analysis\reuse_regime_test\seed_1_none.csv,ran,results\phase3\analysis\reuse_regime_test\seed_1_none.log
+0,none,0.51175,0.005391792704790181,0.52,28,0.4865,0.51,results\phase3\analysis\reuse_regime_test\seed_0_none.csv,skipped (already existed),
+1,none,0.29875,0.04469499812219325,0.34,46,0.3315,0.288,results\phase3\analysis\reuse_regime_test\seed_1_none.csv,skipped (already existed),
+2,none,0.305,0.023880655650247853,0.34,24,0.334,0.334,results\phase3\analysis\reuse_regime_test\seed_2_none.csv,skipped (already existed),
+3,none,0.50525,0.004773438413315325,0.514,42,0.48,0.512,results\phase3\analysis\reuse_regime_test\seed_3_none.csv,skipped (already existed),
+4,none,0.5267499999999999,0.1574327520834576,0.662,48,0.649,0.566,results\phase3\analysis\reuse_regime_test\seed_4_none.csv,skipped (already existed),
+5,none,0.6477499999999999,0.07001581454010432,0.73,56,0.7295,0.718,results\phase3\analysis\reuse_regime_test\seed_5_none.csv,skipped (already existed),
+6,none,0.5545,0.034454939517329815,0.594,38,0.5705,0.592,results\phase3\analysis\reuse_regime_test\seed_6_none.csv,skipped (already existed),
+7,none,0.57075,0.0723636649154809,0.652,56,0.6385,0.442,results\phase3\analysis\reuse_regime_test\seed_7_none.csv,skipped (already existed),
+8,none,0.33825000000000005,0.0029154759474226528,0.34,28,0.331,0.332,results\phase3\analysis\reuse_regime_test\seed_8_none.csv,skipped (already existed),
+9,none,0.377,0.04052512448205081,0.414,44,0.418,0.408,results\phase3\analysis\reuse_regime_test\seed_9_none.csv,skipped (already existed),
+10,none,0.3645,0.06772001181334805,0.52,34,0.4875,0.444,results\phase3\analysis\reuse_regime_test\seed_10_none.csv,skipped (already existed),
+11,none,0.60575,0.06340290664810701,0.668,34,0.6465,0.656,results\phase3\analysis\reuse_regime_test\seed_11_none.csv,skipped (already existed),
+12,none,0.3390000000000001,0.21457466233058767,0.518,46,0.4745,0.336,results\phase3\analysis\reuse_regime_test\seed_12_none.csv,skipped (already existed),
+13,none,0.45875,0.07637454699421417,0.518,44,0.4875,0.518,results\phase3\analysis\reuse_regime_test\seed_13_none.csv,skipped (already existed),
+14,none,0.507,0.00991391518451285,0.518,16,0.481,0.494,results\phase3\analysis\reuse_regime_test\seed_14_none.csv,skipped (already existed),
+15,none,0.573,0.21289299793893782,0.858,46,0.8555,0.624,results\phase3\analysis\reuse_regime_test\seed_15_none.csv,skipped (already existed),
+16,none,0.63225,0.02809041524384127,0.672,44,0.651,0.61,results\phase3\analysis\reuse_regime_test\seed_16_none.csv,skipped (already existed),
+17,none,0.41100000000000003,0.02267786838055363,0.66,32,0.6625,0.446,results\phase3\analysis\reuse_regime_test\seed_17_none.csv,skipped (already existed),
+18,none,0.33225000000000005,0.015581582534701497,0.342,52,0.3335,0.338,results\phase3\analysis\reuse_regime_test\seed_18_none.csv,skipped (already existed),
+19,none,0.489,0.02092162244459749,0.52,16,0.4845,0.514,results\phase3\analysis\reuse_regime_test\seed_19_none.csv,skipped (already existed),
+20,none,0.32025000000000003,0.039748315328181794,0.34,22,0.334,0.336,results\phase3\analysis\reuse_regime_test\seed_20_none.csv,skipped (already existed),
+21,none,0.3295,0.007690439333539876,0.34,34,0.333,0.314,results\phase3\analysis\reuse_regime_test\seed_21_none.csv,skipped (already existed),
+22,none,0.56925,0.006923046397979071,0.586,30,0.561,0.58,results\phase3\analysis\reuse_regime_test\seed_22_none.csv,skipped (already existed),
+23,none,0.31675,0.10041022998536696,0.414,42,0.4035,0.374,results\phase3\analysis\reuse_regime_test\seed_23_none.csv,skipped (already existed),
+24,none,0.6677500000000001,0.20722779046946657,0.89,54,0.863,0.772,results\phase3\analysis\reuse_regime_test\seed_24_none.csv,skipped (already existed),
+25,none,0.496,0.09650462609192814,0.584,34,0.5585,0.578,results\phase3\analysis\reuse_regime_test\seed_25_none.csv,skipped (already existed),
+26,none,0.5782499999999999,0.027947655153365336,0.606,46,0.6055,0.514,results\phase3\analysis\reuse_regime_test\seed_26_none.csv,skipped (already existed),
+27,none,0.5125,0.08195992051868138,0.59,34,0.572,0.426,results\phase3\analysis\reuse_regime_test\seed_27_none.csv,skipped (already existed),
+28,none,0.6094999999999999,0.026005493925048133,0.654,36,0.662,0.624,results\phase3\analysis\reuse_regime_test\seed_28_none.csv,skipped (already existed),
+29,none,0.1205,0.039159016476778004,0.158,40,0.1775,0.068,results\phase3\analysis\reuse_regime_test\seed_29_none.csv,skipped (already existed),
+30,none,0.36924999999999997,0.06218807878409769,0.418,36,0.405,0.36,results\phase3\analysis\reuse_regime_test\seed_30_none.csv,skipped (already existed),
+31,none,0.63775,0.055026616936066246,0.664,56,0.65,0.66,results\phase3\analysis\reuse_regime_test\seed_31_none.csv,skipped (already existed),
+32,none,0.4385,0.08811518435709999,0.562,60,0.535,0.562,results\phase3\analysis\reuse_regime_test\seed_32_none.csv,skipped (already existed),
+33,none,0.3365,0.0027774602993176573,0.34,46,0.33,0.336,results\phase3\analysis\reuse_regime_test\seed_33_none.csv,skipped (already existed),
+34,none,0.32225000000000004,0.021339098923270954,0.34,24,0.327,0.332,results\phase3\analysis\reuse_regime_test\seed_34_none.csv,skipped (already existed),
+35,none,0.581,0.004140393356054129,0.588,46,0.566,0.58,results\phase3\analysis\reuse_regime_test\seed_35_none.csv,skipped (already existed),
+36,none,0.8472500000000001,0.07228465555407612,0.962,58,0.955,0.79,results\phase3\analysis\reuse_regime_test\seed_36_none.csv,skipped (already existed),
+37,none,0.25775000000000003,0.13258932299181775,0.514,28,0.489,0.376,results\phase3\analysis\reuse_regime_test\seed_37_none.csv,skipped (already existed),
+38,none,0.4475,0.08130190649671137,0.52,26,0.491,0.51,results\phase3\analysis\reuse_regime_test\seed_38_none.csv,skipped (already existed),
+39,none,0.32225000000000004,0.029363485585234703,0.34,16,0.334,0.332,results\phase3\analysis\reuse_regime_test\seed_39_none.csv,skipped (already existed),
+40,none,0.32775,0.019637791554623883,0.34,56,0.334,0.332,results\phase3\analysis\reuse_regime_test\seed_40_none.csv,skipped (already existed),
+41,none,0.50725,0.01190138047214933,0.568,18,0.5535,0.484,results\phase3\analysis\reuse_regime_test\seed_41_none.csv,skipped (already existed),
+42,none,0.42125,0.09149512086913239,0.582,38,0.5725,0.546,results\phase3\analysis\reuse_regime_test\seed_42_none.csv,skipped (already existed),
+43,none,0.4805,0.04033785885669761,0.514,26,0.485,0.504,results\phase3\analysis\reuse_regime_test\seed_43_none.csv,skipped (already existed),
+44,none,0.47025,0.05276836173314461,0.524,48,0.492,0.514,results\phase3\analysis\reuse_regime_test\seed_44_none.csv,skipped (already existed),
+45,none,0.4425,0.07440238091428449,0.516,48,0.4815,0.466,results\phase3\analysis\reuse_regime_test\seed_45_none.csv,skipped (already existed),
+46,none,0.36824999999999997,0.08777528125844998,0.412,48,0.4085,0.412,results\phase3\analysis\reuse_regime_test\seed_46_none.csv,skipped (already existed),
+47,none,0.31425000000000003,0.0447269493705976,0.34,36,0.3315,0.336,results\phase3\analysis\reuse_regime_test\seed_47_none.csv,skipped (already existed),
+48,none,0.5387500000000001,0.08599626237725186,0.65,54,0.637,0.582,results\phase3\analysis\reuse_regime_test\seed_48_none.csv,skipped (already existed),
+49,none,0.50325,0.019739373271278324,0.518,54,0.486,0.458,results\phase3\analysis\reuse_regime_test\seed_49_none.csv,skipped (already existed),
+50,none,0.32575,0.018029737340611182,0.338,34,0.33,0.324,results\phase3\analysis\reuse_regime_test\seed_50_none.csv,skipped (already existed),
+51,none,0.2795,0.08854861457333561,0.37,34,0.3625,0.338,results\phase3\analysis\reuse_regime_test\seed_51_none.csv,skipped (already existed),
+52,none,0.5615,0.02936956636675841,0.59,60,0.5745,0.59,results\phase3\analysis\reuse_regime_test\seed_52_none.csv,skipped (already existed),
+53,none,0.2975,0.0514448386971077,0.34,34,0.332,0.332,results\phase3\analysis\reuse_regime_test\seed_53_none.csv,skipped (already existed),
+54,none,0.337,0.0015118578920369102,0.34,18,0.3305,0.334,results\phase3\analysis\reuse_regime_test\seed_54_none.csv,skipped (already existed),
+55,none,0.79175,0.09415147370062776,0.904,32,0.889,0.864,results\phase3\analysis\reuse_regime_test\seed_55_none.csv,skipped (already existed),
+56,none,0.49425,0.0260205962378157,0.522,38,0.4875,0.504,results\phase3\analysis\reuse_regime_test\seed_56_none.csv,skipped (already existed),
+57,none,0.5702499999999999,0.020741607597153225,0.586,60,0.5755,0.586,results\phase3\analysis\reuse_regime_test\seed_57_none.csv,skipped (already existed),
+58,none,0.8792500000000001,0.03171187249505868,0.914,48,0.887,0.84,results\phase3\analysis\reuse_regime_test\seed_58_none.csv,skipped (already existed),
+59,none,0.53675,0.029431518576422185,0.588,40,0.5715,0.57,results\phase3\analysis\reuse_regime_test\seed_59_none.csv,skipped (already existed),
+60,none,0.51025,0.052431588079815274,0.592,32,0.5795,0.578,results\phase3\analysis\reuse_regime_test\seed_60_none.csv,skipped (already existed),
+61,none,0.321,0.024354524367001244,0.338,52,0.3265,0.332,results\phase3\analysis\reuse_regime_test\seed_61_none.csv,skipped (already existed),
+62,none,0.49175,0.030358571394959576,0.522,24,0.486,0.48,results\phase3\analysis\reuse_regime_test\seed_62_none.csv,skipped (already existed),
+63,none,0.5022500000000001,0.007814821083775923,0.518,32,0.484,0.502,results\phase3\analysis\reuse_regime_test\seed_63_none.csv,skipped (already existed),
+64,none,0.51,0.014342743312012737,0.522,58,0.4825,0.478,results\phase3\analysis\reuse_regime_test\seed_64_none.csv,skipped (already existed),
+65,none,0.488,0.021460927952244486,0.522,38,0.485,0.498,results\phase3\analysis\reuse_regime_test\seed_65_none.csv,skipped (already existed),
+66,none,0.48175,0.04654260720795824,0.594,42,0.579,0.516,results\phase3\analysis\reuse_regime_test\seed_66_none.csv,skipped (already existed),
+67,none,0.49624999999999997,0.03549547254832047,0.52,44,0.4835,0.496,results\phase3\analysis\reuse_regime_test\seed_67_none.csv,skipped (already existed),
+68,none,0.883,0.09557644659044998,0.974,50,0.972,0.81,results\phase3\analysis\reuse_regime_test\seed_68_none.csv,skipped (already existed),
+69,none,0.28075000000000006,0.03854403789359461,0.34,58,0.3305,0.302,results\phase3\analysis\reuse_regime_test\seed_69_none.csv,skipped (already existed),
+70,none,0.51275,0.010194536351819616,0.522,52,0.4915,0.52,results\phase3\analysis\reuse_regime_test\seed_70_none.csv,skipped (already existed),
+71,none,0.46925000000000006,0.1022654109937191,0.582,58,0.572,0.574,results\phase3\analysis\reuse_regime_test\seed_71_none.csv,skipped (already existed),
+72,none,0.2175,0.01346954236151219,0.238,40,0.2555,0.226,results\phase3\analysis\reuse_regime_test\seed_72_none.csv,skipped (already existed),
+73,none,0.4495,0.06614054300178847,0.522,32,0.493,0.512,results\phase3\analysis\reuse_regime_test\seed_73_none.csv,skipped (already existed),
+74,none,0.508,0.012328828005937964,0.52,54,0.482,0.512,results\phase3\analysis\reuse_regime_test\seed_74_none.csv,skipped (already existed),
+75,none,0.5125000000000001,0.04134523638133628,0.566,32,0.5525,0.546,results\phase3\analysis\reuse_regime_test\seed_75_none.csv,skipped (already existed),
+76,none,0.32100000000000006,0.029760952365713803,0.338,16,0.3365,0.332,results\phase3\analysis\reuse_regime_test\seed_76_none.csv,skipped (already existed),
+77,none,0.46199999999999997,0.04894311566940311,0.518,30,0.4875,0.506,results\phase3\analysis\reuse_regime_test\seed_77_none.csv,skipped (already existed),
+78,none,0.26775000000000004,0.0860991952841107,0.338,46,0.329,0.33,results\phase3\analysis\reuse_regime_test\seed_78_none.csv,skipped (already existed),
+79,none,0.26275000000000004,0.08433902672293195,0.342,46,0.332,0.076,results\phase3\analysis\reuse_regime_test\seed_79_none.csv,skipped (already existed),
+80,none,0.515,0.0076345081233642285,0.528,54,0.492,0.518,results\phase3\analysis\reuse_regime_test\seed_80_none.csv,skipped (already existed),
+81,none,0.27725,0.05142470223540434,0.316,60,0.3305,0.316,results\phase3\analysis\reuse_regime_test\seed_81_none.csv,skipped (already existed),
+82,none,0.331,0.01161280081880091,0.34,26,0.3315,0.338,results\phase3\analysis\reuse_regime_test\seed_82_none.csv,skipped (already existed),
+83,none,0.30774999999999997,0.09475042404729836,0.402,28,0.4035,0.402,results\phase3\analysis\reuse_regime_test\seed_83_none.csv,skipped (already existed),
+84,none,0.16374999999999998,0.06638792919542785,0.238,56,0.2405,0.186,results\phase3\analysis\reuse_regime_test\seed_84_none.csv,skipped (already existed),
+85,none,0.26475000000000004,0.042947642542984825,0.334,16,0.33,0.246,results\phase3\analysis\reuse_regime_test\seed_85_none.csv,skipped (already existed),
+86,none,0.61675,0.17569758921835796,0.898,60,0.884,0.898,results\phase3\analysis\reuse_regime_test\seed_86_none.csv,skipped (already existed),
+87,none,0.2475,0.11541106656518813,0.34,14,0.3315,0.224,results\phase3\analysis\reuse_regime_test\seed_87_none.csv,skipped (already existed),
+88,none,0.4155,0.1871065395512865,0.586,32,0.5705,0.578,results\phase3\analysis\reuse_regime_test\seed_88_none.csv,skipped (already existed),
+89,none,0.5740000000000001,0.06275576239904758,0.662,60,0.6475,0.662,results\phase3\analysis\reuse_regime_test\seed_89_none.csv,skipped (already existed),
+90,none,0.5035000000000001,0.02881963616306475,0.544,60,0.5215,0.544,results\phase3\analysis\reuse_regime_test\seed_90_none.csv,skipped (already existed),
+91,none,0.41674999999999995,0.06616807603152963,0.498,56,0.4565,0.418,results\phase3\analysis\reuse_regime_test\seed_91_none.csv,skipped (already existed),
+92,none,0.33575,0.0037701837772561885,0.34,24,0.3325,0.338,results\phase3\analysis\reuse_regime_test\seed_92_none.csv,skipped (already existed),
+93,none,0.23199999999999998,0.0032071349029490857,0.238,44,0.247,0.236,results\phase3\analysis\reuse_regime_test\seed_93_none.csv,skipped (already existed),
+94,none,0.3325,0.0036645015252516205,0.34,30,0.334,0.34,results\phase3\analysis\reuse_regime_test\seed_94_none.csv,skipped (already existed),
+95,none,0.424,0.05927177116590036,0.486,50,0.469,0.454,results\phase3\analysis\reuse_regime_test\seed_95_none.csv,skipped (already existed),
+96,none,0.4265,0.047961293917968,0.512,60,0.4725,0.512,results\phase3\analysis\reuse_regime_test\seed_96_none.csv,skipped (already existed),
+97,none,0.29475,0.03665963135969281,0.34,36,0.333,0.338,results\phase3\analysis\reuse_regime_test\seed_97_none.csv,skipped (already existed),
+98,none,0.5047499999999999,0.12621495270257913,0.588,44,0.573,0.47,results\phase3\analysis\reuse_regime_test\seed_98_none.csv,skipped (already existed),
+99,none,0.7502500000000001,0.03448291502427584,0.784,60,0.7845,0.784,results\phase3\analysis\reuse_regime_test\seed_99_none.csv,skipped (already existed),
+0,kl_anchored,0.512,0.006141195788629913,0.522,58,0.4845,0.502,results\phase3\analysis\reuse_regime_test\seed_0_kl_anchored.csv,skipped (already existed),
+1,kl_anchored,0.30300000000000005,0.0608417150129275,0.34,30,0.332,0.178,results\phase3\analysis\reuse_regime_test\seed_1_kl_anchored.csv,skipped (already existed),
+2,kl_anchored,0.33725000000000005,0.0035355339059327407,0.34,42,0.332,0.336,results\phase3\analysis\reuse_regime_test\seed_2_kl_anchored.csv,skipped (already existed),
+3,kl_anchored,0.491,0.017336995950032078,0.514,40,0.4755,0.486,results\phase3\analysis\reuse_regime_test\seed_3_kl_anchored.csv,skipped (already existed),
+4,kl_anchored,0.579,0.07250615737399725,0.652,58,0.6435,0.464,results\phase3\analysis\reuse_regime_test\seed_4_kl_anchored.csv,skipped (already existed),
+5,kl_anchored,0.7382500000000001,0.11875274432919132,0.852,56,0.8555,0.728,results\phase3\analysis\reuse_regime_test\seed_5_kl_anchored.csv,skipped (already existed),
+6,kl_anchored,0.4335,0.07761259102564665,0.518,30,0.479,0.372,results\phase3\analysis\reuse_regime_test\seed_6_kl_anchored.csv,skipped (already existed),
+7,kl_anchored,0.3345,0.004985693819032904,0.34,54,0.3355,0.326,results\phase3\analysis\reuse_regime_test\seed_7_kl_anchored.csv,skipped (already existed),
+8,kl_anchored,0.50125,0.025047098491784294,0.522,52,0.4865,0.504,results\phase3\analysis\reuse_regime_test\seed_8_kl_anchored.csv,skipped (already existed),
+9,kl_anchored,0.4885,0.028660575211055552,0.522,36,0.488,0.492,results\phase3\analysis\reuse_regime_test\seed_9_kl_anchored.csv,skipped (already existed),
+10,kl_anchored,0.30550000000000005,0.05029910535983717,0.338,54,0.3325,0.196,results\phase3\analysis\reuse_regime_test\seed_10_kl_anchored.csv,skipped (already existed),
+11,kl_anchored,0.485,0.028264060976037095,0.518,44,0.4815,0.438,results\phase3\analysis\reuse_regime_test\seed_11_kl_anchored.csv,skipped (already existed),
+12,kl_anchored,0.5835,0.06561141015751105,0.652,30,0.655,0.638,results\phase3\analysis\reuse_regime_test\seed_12_kl_anchored.csv,skipped (already existed),
+13,kl_anchored,0.29075,0.0461170870099762,0.34,20,0.334,0.31,results\phase3\analysis\reuse_regime_test\seed_13_kl_anchored.csv,skipped (already existed),
+14,kl_anchored,0.5,0.03662941830979966,0.522,28,0.4745,0.51,results\phase3\analysis\reuse_regime_test\seed_14_kl_anchored.csv,skipped (already existed),
+15,kl_anchored,0.5025,0.05706888068691329,0.586,26,0.57,0.54,results\phase3\analysis\reuse_regime_test\seed_15_kl_anchored.csv,skipped (already existed),
+16,kl_anchored,0.58175,0.007887603293414662,0.594,44,0.575,0.584,results\phase3\analysis\reuse_regime_test\seed_16_kl_anchored.csv,skipped (already existed),
+17,kl_anchored,0.4185,0.11982725661789737,0.56,34,0.534,0.276,results\phase3\analysis\reuse_regime_test\seed_17_kl_anchored.csv,skipped (already existed),
+18,kl_anchored,0.45925,0.30074182093141427,0.798,60,0.8015,0.798,results\phase3\analysis\reuse_regime_test\seed_18_kl_anchored.csv,skipped (already existed),
+19,kl_anchored,0.47224999999999995,0.09588348584163416,0.582,28,0.569,0.36,results\phase3\analysis\reuse_regime_test\seed_19_kl_anchored.csv,skipped (already existed),
+20,kl_anchored,0.219,0.018361450300639574,0.242,58,0.241,0.23,results\phase3\analysis\reuse_regime_test\seed_20_kl_anchored.csv,skipped (already existed),
+21,kl_anchored,0.3595,0.04995712447403559,0.414,48,0.4075,0.404,results\phase3\analysis\reuse_regime_test\seed_21_kl_anchored.csv,skipped (already existed),
+22,kl_anchored,0.56225,0.2811007699333868,0.834,52,0.812,0.528,results\phase3\analysis\reuse_regime_test\seed_22_kl_anchored.csv,skipped (already existed),
+23,kl_anchored,0.332,0.014851647335276613,0.34,40,0.3345,0.296,results\phase3\analysis\reuse_regime_test\seed_23_kl_anchored.csv,skipped (already existed),
+24,kl_anchored,0.50225,0.029168231250552623,0.522,52,0.487,0.434,results\phase3\analysis\reuse_regime_test\seed_24_kl_anchored.csv,skipped (already existed),
+25,kl_anchored,0.607,0.04522957313212546,0.65,60,0.626,0.65,results\phase3\analysis\reuse_regime_test\seed_25_kl_anchored.csv,skipped (already existed),
+26,kl_anchored,0.5640000000000001,0.031910589375405043,0.608,58,0.586,0.582,results\phase3\analysis\reuse_regime_test\seed_26_kl_anchored.csv,skipped (already existed),
+27,kl_anchored,0.60725,0.05188930525647844,0.658,50,0.6645,0.65,results\phase3\analysis\reuse_regime_test\seed_27_kl_anchored.csv,skipped (already existed),
+28,kl_anchored,0.615,0.03920641346951873,0.664,56,0.6425,0.58,results\phase3\analysis\reuse_regime_test\seed_28_kl_anchored.csv,skipped (already existed),
+29,kl_anchored,0.0,0.0,0.01,4,0.011,0.0,results\phase3\analysis\reuse_regime_test\seed_29_kl_anchored.csv,skipped (already existed),
+30,kl_anchored,0.31925000000000003,0.015599908424639654,0.34,60,0.333,0.34,results\phase3\analysis\reuse_regime_test\seed_30_kl_anchored.csv,skipped (already existed),
+31,kl_anchored,0.53325,0.05152461270388855,0.584,58,0.5745,0.582,results\phase3\analysis\reuse_regime_test\seed_31_kl_anchored.csv,skipped (already existed),
+32,kl_anchored,0.33075,0.010138328969101095,0.338,22,0.333,0.336,results\phase3\analysis\reuse_regime_test\seed_32_kl_anchored.csv,skipped (already existed),
+33,kl_anchored,0.307,0.12458846541428188,0.594,44,0.5735,0.334,results\phase3\analysis\reuse_regime_test\seed_33_kl_anchored.csv,skipped (already existed),
+34,kl_anchored,0.325,0.014142135623730963,0.34,38,0.3335,0.304,results\phase3\analysis\reuse_regime_test\seed_34_kl_anchored.csv,skipped (already existed),
+35,kl_anchored,0.50675,0.07629969106846275,0.61,22,0.6,0.518,results\phase3\analysis\reuse_regime_test\seed_35_kl_anchored.csv,skipped (already existed),
+36,kl_anchored,0.61175,0.052355242608275905,0.662,58,0.649,0.66,results\phase3\analysis\reuse_regime_test\seed_36_kl_anchored.csv,skipped (already existed),
+37,kl_anchored,0.5714999999999999,0.006210590034081194,0.586,54,0.568,0.572,results\phase3\analysis\reuse_regime_test\seed_37_kl_anchored.csv,skipped (already existed),
+38,kl_anchored,0.4825,0.039680869806134916,0.514,60,0.4805,0.514,results\phase3\analysis\reuse_regime_test\seed_38_kl_anchored.csv,skipped (already existed),
+39,kl_anchored,0.32175,0.027285527299284504,0.34,54,0.334,0.336,results\phase3\analysis\reuse_regime_test\seed_39_kl_anchored.csv,skipped (already existed),
+40,kl_anchored,0.5547500000000001,0.031037995148803364,0.586,60,0.572,0.586,results\phase3\analysis\reuse_regime_test\seed_40_kl_anchored.csv,skipped (already existed),
+44,kl_anchored,0.51475,0.004891683905218271,0.522,56,0.4895,0.514,results\phase3\analysis\reuse_regime_test\seed_44_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_44_kl_anchored.log
+42,kl_anchored,0.488,0.039756401101853134,0.522,20,0.4895,0.498,results\phase3\analysis\reuse_regime_test\seed_42_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_42_kl_anchored.log
+41,kl_anchored,0.35575,0.11211951531417585,0.408,26,0.4085,0.082,results\phase3\analysis\reuse_regime_test\seed_41_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_41_kl_anchored.log
+43,kl_anchored,0.469,0.039770771751555,0.506,52,0.4595,0.434,results\phase3\analysis\reuse_regime_test\seed_43_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_43_kl_anchored.log
+45,kl_anchored,0.36525,0.10581891540335715,0.422,20,0.406,0.108,results\phase3\analysis\reuse_regime_test\seed_45_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_45_kl_anchored.log
+46,kl_anchored,0.33575,0.004334248987508022,0.34,56,0.3335,0.34,results\phase3\analysis\reuse_regime_test\seed_46_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_46_kl_anchored.log
+47,kl_anchored,0.522,0.047147185948443845,0.58,54,0.573,0.458,results\phase3\analysis\reuse_regime_test\seed_47_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_47_kl_anchored.log
+48,kl_anchored,0.5335,0.12482101471421274,0.63,52,0.626,0.614,results\phase3\analysis\reuse_regime_test\seed_48_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_48_kl_anchored.log
+50,kl_anchored,0.4865,0.03806385612174814,0.516,28,0.4855,0.498,results\phase3\analysis\reuse_regime_test\seed_50_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_50_kl_anchored.log
+49,kl_anchored,0.33299999999999996,0.08230257763712073,0.52,30,0.486,0.404,results\phase3\analysis\reuse_regime_test\seed_49_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_49_kl_anchored.log
+52,kl_anchored,0.5125,0.004629100498862762,0.52,28,0.488,0.504,results\phase3\analysis\reuse_regime_test\seed_52_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_52_kl_anchored.log
+51,kl_anchored,0.7045,0.07164794882917845,0.798,60,0.7975,0.798,results\phase3\analysis\reuse_regime_test\seed_51_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_51_kl_anchored.log
+54,kl_anchored,0.51075,0.01068710838881528,0.52,56,0.4835,0.508,results\phase3\analysis\reuse_regime_test\seed_54_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_54_kl_anchored.log
+53,kl_anchored,0.22075,0.026767517628648343,0.238,56,0.247,0.236,results\phase3\analysis\reuse_regime_test\seed_53_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_53_kl_anchored.log
+55,kl_anchored,0.82175,0.039820131304942434,0.906,52,0.885,0.79,results\phase3\analysis\reuse_regime_test\seed_55_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_55_kl_anchored.log
+56,kl_anchored,0.51225,0.005994044663544933,0.52,60,0.489,0.52,results\phase3\analysis\reuse_regime_test\seed_56_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_56_kl_anchored.log
+57,kl_anchored,0.49075,0.020366288672355456,0.512,60,0.48,0.512,results\phase3\analysis\reuse_regime_test\seed_57_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_57_kl_anchored.log
+58,kl_anchored,0.796,0.08881441324469808,0.918,52,0.898,0.742,results\phase3\analysis\reuse_regime_test\seed_58_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_58_kl_anchored.log
+59,kl_anchored,0.61625,0.04023413618167684,0.662,52,0.646,0.618,results\phase3\analysis\reuse_regime_test\seed_59_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_59_kl_anchored.log
+60,kl_anchored,0.7502500000000001,0.06963117118072913,0.81,42,0.8085,0.592,results\phase3\analysis\reuse_regime_test\seed_60_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_60_kl_anchored.log
+62,kl_anchored,0.46725,0.04176037082484507,0.52,28,0.483,0.478,results\phase3\analysis\reuse_regime_test\seed_62_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_62_kl_anchored.log
+61,kl_anchored,0.259,0.039453408326422544,0.308,36,0.327,0.294,results\phase3\analysis\reuse_regime_test\seed_61_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_61_kl_anchored.log
+63,kl_anchored,0.28375,0.078794035307249,0.336,26,0.321,0.282,results\phase3\analysis\reuse_regime_test\seed_63_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_63_kl_anchored.log
+64,kl_anchored,0.33175,0.014713938969562173,0.4,28,0.401,0.334,results\phase3\analysis\reuse_regime_test\seed_64_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_64_kl_anchored.log
+65,kl_anchored,0.6067499999999999,0.031729886767615734,0.652,42,0.659,0.58,results\phase3\analysis\reuse_regime_test\seed_65_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_65_kl_anchored.log
+66,kl_anchored,0.3355,0.0020701966780270645,0.34,36,0.3345,0.334,results\phase3\analysis\reuse_regime_test\seed_66_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_66_kl_anchored.log
+67,kl_anchored,0.48900000000000005,0.03700193045157047,0.524,58,0.4865,0.522,results\phase3\analysis\reuse_regime_test\seed_67_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_67_kl_anchored.log
+68,kl_anchored,0.5165000000000001,0.0023299294900428723,0.52,26,0.49,0.518,results\phase3\analysis\reuse_regime_test\seed_68_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_68_kl_anchored.log
+70,kl_anchored,0.48975,0.08380547203409301,0.584,30,0.5625,0.478,results\phase3\analysis\reuse_regime_test\seed_70_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_70_kl_anchored.log
+69,kl_anchored,0.26825,0.06819666937824541,0.408,20,0.395,0.184,results\phase3\analysis\reuse_regime_test\seed_69_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_69_kl_anchored.log
+71,kl_anchored,0.54925,0.09456630327069845,0.662,28,0.628,0.562,results\phase3\analysis\reuse_regime_test\seed_71_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_71_kl_anchored.log
+72,kl_anchored,0.41925,0.0023754698783308432,0.422,34,0.4015,0.42,results\phase3\analysis\reuse_regime_test\seed_72_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_72_kl_anchored.log
+74,kl_anchored,0.5102500000000001,0.04776654537584706,0.586,28,0.557,0.448,results\phase3\analysis\reuse_regime_test\seed_74_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_74_kl_anchored.log
+73,kl_anchored,0.489,0.03524607374284,0.514,50,0.4775,0.476,results\phase3\analysis\reuse_regime_test\seed_73_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_73_kl_anchored.log
+76,kl_anchored,0.494,0.014696938456699083,0.514,18,0.48,0.472,results\phase3\analysis\reuse_regime_test\seed_76_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_76_kl_anchored.log
+75,kl_anchored,0.21125,0.02904061195734592,0.242,14,0.252,0.162,results\phase3\analysis\reuse_regime_test\seed_75_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_75_kl_anchored.log
+77,kl_anchored,0.5137499999999999,0.16305454827843874,0.898,36,0.8865,0.664,results\phase3\analysis\reuse_regime_test\seed_77_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_77_kl_anchored.log
+78,kl_anchored,0.3345,0.006023762469230866,0.34,34,0.331,0.34,results\phase3\analysis\reuse_regime_test\seed_78_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_78_kl_anchored.log
+79,kl_anchored,0.3365,0.002777460299317657,0.34,58,0.3325,0.34,results\phase3\analysis\reuse_regime_test\seed_79_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_79_kl_anchored.log
+80,kl_anchored,0.43600000000000005,0.048989794855663564,0.516,18,0.484,0.512,results\phase3\analysis\reuse_regime_test\seed_80_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_80_kl_anchored.log
+81,kl_anchored,0.50525,0.026980151434500353,0.522,50,0.488,0.516,results\phase3\analysis\reuse_regime_test\seed_81_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_81_kl_anchored.log
+83,kl_anchored,0.33225000000000005,0.004464142854857074,0.338,38,0.326,0.326,results\phase3\analysis\reuse_regime_test\seed_83_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_83_kl_anchored.log
+82,kl_anchored,0.5535,0.038821937833431956,0.586,52,0.5635,0.548,results\phase3\analysis\reuse_regime_test\seed_82_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_82_kl_anchored.log
+84,kl_anchored,0.068,0.0,0.068,12,0.097,0.068,results\phase3\analysis\reuse_regime_test\seed_84_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_84_kl_anchored.log
+86,kl_anchored,0.47700000000000004,0.041486658784998076,0.522,26,0.4855,0.516,results\phase3\analysis\reuse_regime_test\seed_86_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_86_kl_anchored.log
+85,kl_anchored,0.3375,0.003817254061682114,0.34,28,0.3305,0.34,results\phase3\analysis\reuse_regime_test\seed_85_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_85_kl_anchored.log
+87,kl_anchored,0.25425,0.09695028180906512,0.34,42,0.335,0.238,results\phase3\analysis\reuse_regime_test\seed_87_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_87_kl_anchored.log
+88,kl_anchored,0.483,0.044899888641287314,0.52,36,0.4835,0.508,results\phase3\analysis\reuse_regime_test\seed_88_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_88_kl_anchored.log
+90,kl_anchored,0.3135,0.021613487852330946,0.336,28,0.33,0.324,results\phase3\analysis\reuse_regime_test\seed_90_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_90_kl_anchored.log
+89,kl_anchored,0.49074999999999996,0.03550352095215347,0.522,26,0.4915,0.422,results\phase3\analysis\reuse_regime_test\seed_89_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_89_kl_anchored.log
+91,kl_anchored,0.44525000000000003,0.05633509436526096,0.502,50,0.475,0.458,results\phase3\analysis\reuse_regime_test\seed_91_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_91_kl_anchored.log
+92,kl_anchored,0.44225000000000003,0.07407669770485953,0.512,28,0.483,0.362,results\phase3\analysis\reuse_regime_test\seed_92_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_92_kl_anchored.log
+93,kl_anchored,0.29625,0.16495692078323274,0.426,46,0.411,0.16,results\phase3\analysis\reuse_regime_test\seed_93_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_93_kl_anchored.log
+95,kl_anchored,0.31975000000000003,0.03218584427086808,0.34,22,0.333,0.338,results\phase3\analysis\reuse_regime_test\seed_95_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_95_kl_anchored.log
+94,kl_anchored,0.40149999999999997,0.14396328897128105,0.488,46,0.467,0.484,results\phase3\analysis\reuse_regime_test\seed_94_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_94_kl_anchored.log
+96,kl_anchored,0.48725,0.03969796684250431,0.516,56,0.4865,0.486,results\phase3\analysis\reuse_regime_test\seed_96_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_96_kl_anchored.log
+98,kl_anchored,0.45725,0.0589715427739758,0.522,46,0.4745,0.498,results\phase3\analysis\reuse_regime_test\seed_98_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_98_kl_anchored.log
+97,kl_anchored,0.3385,0.004869731585445506,0.348,52,0.3345,0.332,results\phase3\analysis\reuse_regime_test\seed_97_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_97_kl_anchored.log
+99,kl_anchored,0.5115000000000001,0.02016361645567157,0.588,28,0.5675,0.52,results\phase3\analysis\reuse_regime_test\seed_99_kl_anchored.csv,ran,results\phase3\analysis\reuse_regime_test\seed_99_kl_anchored.log
