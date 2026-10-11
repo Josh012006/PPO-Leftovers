@@ -57,11 +57,11 @@ let
 
 $$
 B_\epsilon(x)=
-\left\{
+\left\\{
 x'\in\mathcal S\times\mathcal A
 :
 d(x,x')\leq\epsilon
-\right\}
+\right\\}
 $$
 
 be a local neighborhood, where $d(\cdot,\cdot)$ is a distance on the state-action space.
