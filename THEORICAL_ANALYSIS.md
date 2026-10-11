@@ -72,10 +72,10 @@ $$
 d(x,x')=
 \left\|
 \begin{bmatrix}
-s \\ a
+s \\\\ a
 \end{bmatrix} -
 \begin{bmatrix}
-s' \\ a'
+s' \\\\ a'
 \end{bmatrix}
 \right\|_2.
 $$
